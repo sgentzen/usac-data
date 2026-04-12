@@ -10,21 +10,25 @@ class C2BudgetTool(DatasetMeta):
     """Category 2 five-year budget balance dataset.
 
     Tracks C2 budget caps and remaining balances per entity.
-    Dataset: https://opendata.usac.org/E-Rate/E-Rate-Category-2-Budgets/7zpf-aris
+    Dataset: https://opendata.usac.org/E-Rate/E-Rate-Category-2-Budget-Tool/6brt-5pbv
     """
 
-    dataset_id = "7zpf-aris"
+    dataset_id = "6brt-5pbv"
     name = "C2 Budget Tool"
     description = "Category 2 five-year budget balances"
 
     # -- Known fields --
-    entity_number = "entity_number"
-    entity_name = "entity_name"
+    ben = "ben"
+    billed_entity_name = "billed_entity_name"
+    applicant_type = "applicant_type"
     state = "state"
-    c2_budget_5yr = "c2_budget_5yr"
-    c2_budget_remaining = "c2_budget_remaining"
-    c2_committed = "c2_committed"
-    c2_disbursed = "c2_disbursed"
+    full_time_students = "full_time_students"
+    c2_budget = "c2_budget"
+    funded_c2_budget_amount = "funded_c2_budget_amount"
+    pending_c2_budget_amount = "pending_c2_budget_amount"
+    available_c2_budget_amount = "available_c2_budget_amount"
+    c2_budget_version = "c2_budget_version"
+    c2_budget_cycle = "c2_budget_cycle"
 
     @classmethod
     def with_remaining(cls, min_remaining: float = 0) -> SoQLBuilder:
@@ -34,5 +38,5 @@ class C2BudgetTool(DatasetMeta):
                 f"min_remaining must be a number, got {type(min_remaining).__name__}"
             )
         return SoQLBuilder().where_raw(
-            f"c2_budget_remaining > {min_remaining}"
+            f"available_c2_budget_amount > {min_remaining}"
         )

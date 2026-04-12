@@ -7,26 +7,28 @@ from usac_data.query import SoQLBuilder
 
 
 class Consultants(DatasetMeta):
-    """Consultant associations per E-Rate application.
+    """Consultant associations on Form 471 filings.
 
     Maps consultants to the applications and entities they assist.
-    Dataset: https://opendata.usac.org/E-Rate/E-Rate-Consultants/wbx6-kdai
+    Dataset: https://opendata.usac.org/E-Rate/E-Rate-Form-471-Consultants/x5px-esft
+
+    Note: This dataset has NO ``ben``/``entity_number`` column. The entity
+    is identified by ``epc_organization_id``. Use ``organization_name``
+    for cross-dataset matching.
     """
 
-    dataset_id = "wbx6-kdai"
-    name = "Consultants"
-    description = "Consultant associations per application"
+    dataset_id = "x5px-esft"
+    name = "Form 471 Consultants"
+    description = "Consultant associations on Form 471 filings"
 
     # -- Known fields --
-    consultant_name = "consultant_name"
-    consultant_registration_number = "consultant_registration_number"
-    application_number = "application_number"
-    entity_number = "entity_number"
-    entity_name = "entity_name"
+    epc_organization_id = "epc_organization_id"
+    organization_name = "organization_name"
     funding_year = "funding_year"
-    state = "state"
+    cnslt_name = "cnslt_name"
+    cnslt_epc_organization_id = "cnslt_epc_organization_id"
 
     @classmethod
     def for_consultant(cls, name: str) -> SoQLBuilder:
         """Query applications associated with a consultant (partial match)."""
-        return SoQLBuilder().where_like("consultant_name", f"%{name}%")
+        return SoQLBuilder().where_like("cnslt_name", f"%{name}%")

@@ -24,7 +24,7 @@ def c2_budget_remaining_query(
     if state:
         escaped = state.upper().replace("'", "''")
         q = q.where_raw(f"upper(state)='{escaped}'")
-    q = q.order_by("c2_budget_remaining DESC")
+    q = q.order_by("available_c2_budget_amount DESC")
     return C2BudgetTool.dataset_id, q
 
 
@@ -32,19 +32,24 @@ def entities_without_consultant_query(
     funding_year: int,
     state: str | None = None,
 ) -> tuple[str, SoQLBuilder]:
-    """Build query for Form 471 filings with no consultant listed.
+    """Build query for Form 471 consultant filings with no consultant listed.
+
+    Queries the Form 471 Consultants dataset for filings where
+    ``cnslt_name`` is NULL (i.e., entity filed without a consultant).
 
     Returns (dataset_id, query) tuple.
     """
     q = (
         SoQLBuilder()
         .where(funding_year=funding_year)
-        .where_raw("consultant_name IS NULL")
+        .where_raw("cnslt_name IS NULL")
     )
     if state:
+        # Note: The Form 471 Consultants dataset does not have a state column.
+        # This filter will only work if the dataset actually contains such a field.
         escaped = state.upper().replace("'", "''")
         q = q.where_raw(f"upper(state)='{escaped}'")
-    return Form471.dataset_id, q
+    return Consultants.dataset_id, q
 
 
 def frn_history_query(
@@ -53,12 +58,14 @@ def frn_history_query(
 ) -> tuple[str, SoQLBuilder]:
     """Build query for an entity's FRN filing history.
 
+    Queries the Form 471 FRN Status dataset by BEN.
+
     Returns (dataset_id, query) tuple.
     """
-    q = SoQLBuilder().where(entity_number=entity_number)
+    q = SoQLBuilder().where(ben=entity_number)
     if funding_years:
         q = q.where_in("funding_year", funding_years)
-    q = q.order_by("funding_year DESC", "frn")
+    q = q.order_by("funding_year DESC", "funding_request_number")
     return Form471.dataset_id, q
 
 
@@ -70,7 +77,7 @@ def consultant_portfolio_query(
 
     Returns (dataset_id, query) tuple.
     """
-    q = SoQLBuilder().where_like("consultant_name", f"%{consultant_name}%")
+    q = SoQLBuilder().where_like("cnslt_name", f"%{consultant_name}%")
     if funding_year:
         q = q.where(funding_year=funding_year)
     return Consultants.dataset_id, q

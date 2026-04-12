@@ -10,10 +10,10 @@ class EntityInfo(DatasetMeta):
     """School and library entity demographics dataset.
 
     Contains entity details including location, type, and discount rate.
-    Dataset: https://opendata.usac.org/E-Rate/E-Rate-Entity-Information/hbj5-2bpj
+    Dataset: https://opendata.usac.org/E-Rate/E-Rate-Entity-Information/7i5i-83qf
     """
 
-    dataset_id = "hbj5-2bpj"
+    dataset_id = "7i5i-83qf"
     name = "Entity Information"
     description = "School/library demographics and details"
 
@@ -21,18 +21,31 @@ class EntityInfo(DatasetMeta):
     entity_number = "entity_number"
     entity_name = "entity_name"
     entity_type = "entity_type"
-    state = "state"
-    city = "city"
-    zip_code = "zip_code"
-    county = "county"
-    discount_rate = "discount_rate"
-    urban_rural_status = "urban_rural_status"
-    total_enrollment = "total_enrollment"
-    nslp_eligible = "nslp_eligible"
+    parent_entity_number = "parent_entity_number"
+    parent_entity_name = "parent_entity_name"
+    physical_address = "physical_address"
+    physical_city = "physical_city"
+    physical_state = "physical_state"
+    physical_zipcode = "physical_zipcode"
+    physical_county = "physical_county"
+    phone_number = "phone_number"
+    website_url = "website_url"
+    category_one_discount_rate = "category_one_discount_rate"
+    category_two_discount_rate = "category_two_discount_rate"
+    number_of_nslp_students = "number_of_nslp_students"
+    number_of_full_time_students = "number_of_full_time_students"
+    community_eligibility_program_cep = "community_eligibility_program_cep"
+    cep_percentage = "cep_percentage"
+    nces_public_state_code = "nces_public_state_code"
+    nces_public_district_code = "nces_public_district_code"
+    nces_public_building_code = "nces_public_building_code"
 
     @classmethod
     def in_state(cls, state: str) -> SoQLBuilder:
-        """Query entities in a given state."""
+        """Query entities in a given state.
+
+        Note: This dataset uses ``physical_state`` rather than ``state``.
+        """
         return SoQLBuilder().where_raw(
-            f"upper(state)='{state.upper().replace(chr(39), chr(39)*2)}'"
+            f"upper(physical_state)='{state.upper().replace(chr(39), chr(39)*2)}'"
         )

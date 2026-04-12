@@ -64,6 +64,16 @@ class TestUSACClientSync:
             client.get(DATASET_ID)
         assert len(httpx_mock.get_requests()) == 1
 
+    def test_retry_on_429_rate_limit(
+        self, httpx_mock: HTTPXMock, client: USACClient
+    ) -> None:
+        httpx_mock.add_response(status_code=429, headers={"Retry-After": "0"})
+        httpx_mock.add_response(json=[{"ok": True}])
+
+        rows = client.get(DATASET_ID)
+        assert rows == [{"ok": True}]
+        assert len(httpx_mock.get_requests()) == 2
+
     def test_raises_retry_error_after_exhaustion(
         self, httpx_mock: HTTPXMock
     ) -> None:
@@ -91,6 +101,14 @@ class TestUSACClientSync:
 
         all_rows = client.paginate(DATASET_ID)
         assert all_rows == []
+
+    def test_paginate_uses_stable_ordering(self, httpx_mock: HTTPXMock) -> None:
+        client = USACClient(page_size=2)
+        httpx_mock.add_response(json=[{"a": 1}])
+
+        client.paginate(DATASET_ID)
+        request = httpx_mock.get_requests()[0]
+        assert "%24order=%3Aid" in str(request.url) or "$order=:id" in str(request.url)
 
     def test_count(self, httpx_mock: HTTPXMock, client: USACClient) -> None:
         httpx_mock.add_response(json=[{"count": "42"}])

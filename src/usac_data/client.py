@@ -105,13 +105,36 @@ class USACClient:
         query: SoQLBuilder | None = None,
         limit: int | None = None,
         offset: int = 0,
+        ensure_order: bool = False,
     ) -> dict[str, str]:
         params = query.to_params() if query else {}
 
         params["$limit"] = str(limit or self.page_size)
         if offset:
             params["$offset"] = str(offset)
+        # Ensure stable ordering for paginated queries to avoid
+        # duplicate or missing rows when data changes between pages.
+        if ensure_order and "$order" not in params:
+            params["$order"] = ":id"
         return params
+
+    @staticmethod
+    def _is_retryable(exc: httpx.HTTPStatusError) -> bool:
+        """Return True if the HTTP error warrants a retry."""
+        return exc.response.status_code == 429 or exc.response.status_code >= 500
+
+    @staticmethod
+    def _retry_wait(exc: httpx.HTTPStatusError, attempt: int) -> float:
+        """Compute wait time, respecting Retry-After for 429 responses."""
+        if exc.response.status_code == 429:
+            retry_after = exc.response.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    return float(retry_after)
+                except (ValueError, TypeError):
+                    pass
+            return 30.0  # default for 429 without Retry-After
+        return RETRY_BACKOFF * (2**attempt)
 
     def _fetch_sync(
         self,
@@ -126,9 +149,13 @@ class USACClient:
                 return resp.json()  # type: ignore[no-any-return]
             except (httpx.HTTPStatusError, httpx.TransportError) as exc:
                 last_exc = exc
-                if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500:
+                if isinstance(exc, httpx.HTTPStatusError) and not self._is_retryable(exc):
                     raise
-                wait = RETRY_BACKOFF * (2**attempt)
+                wait = (
+                    self._retry_wait(exc, attempt)
+                    if isinstance(exc, httpx.HTTPStatusError)
+                    else RETRY_BACKOFF * (2**attempt)
+                )
                 logger.warning(
                     "Retry %d/%d for %s (wait %.1fs): %s",
                     attempt + 1,
@@ -153,9 +180,13 @@ class USACClient:
                 return resp.json()  # type: ignore[no-any-return]
             except (httpx.HTTPStatusError, httpx.TransportError) as exc:
                 last_exc = exc
-                if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500:
+                if isinstance(exc, httpx.HTTPStatusError) and not self._is_retryable(exc):
                     raise
-                wait = RETRY_BACKOFF * (2**attempt)
+                wait = (
+                    self._retry_wait(exc, attempt)
+                    if isinstance(exc, httpx.HTTPStatusError)
+                    else RETRY_BACKOFF * (2**attempt)
+                )
                 logger.warning(
                     "Retry %d/%d for %s (wait %.1fs): %s",
                     attempt + 1,
@@ -209,10 +240,13 @@ class USACClient:
         """Async generator that auto-paginates through all results.
 
         Yields batches of rows (page_size each) until exhausted.
+        Uses ``:id`` ordering by default for stable pagination.
         """
         offset = 0
         while True:
-            params = self._build_params(query, limit=self.page_size, offset=offset)
+            params = self._build_params(
+                query, limit=self.page_size, offset=offset, ensure_order=True,
+            )
             batch = await self._fetch_async(dataset_id, params)
             if not batch:
                 break
@@ -228,12 +262,15 @@ class USACClient:
     ) -> list[dict[str, Any]]:
         """Sync fetch of ALL rows, auto-paginating. Returns complete list.
 
+        Uses ``:id`` ordering by default for stable pagination.
         Warning: large datasets may use significant memory.
         """
         all_rows: list[dict[str, Any]] = []
         offset = 0
         while True:
-            params = self._build_params(query, limit=self.page_size, offset=offset)
+            params = self._build_params(
+                query, limit=self.page_size, offset=offset, ensure_order=True,
+            )
             batch = self._fetch_sync(dataset_id, params)
             if not batch:
                 break

@@ -16,7 +16,7 @@ class TestC2BudgetRemainingQuery:
         dataset_id, query = c2_budget_remaining_query()
         assert dataset_id == C2BudgetTool.dataset_id
         params = query.to_params()
-        assert "c2_budget_remaining" in params["$where"]
+        assert "available_c2_budget_amount" in params["$where"]
 
     def test_with_min_remaining(self) -> None:
         _, query = c2_budget_remaining_query(min_remaining=5000)
@@ -42,9 +42,9 @@ class TestC2BudgetRemainingQuery:
 class TestEntitiesWithoutConsultantQuery:
     def test_basic(self) -> None:
         dataset_id, query = entities_without_consultant_query(2024)
-        assert dataset_id == Form471.dataset_id
+        assert dataset_id == Consultants.dataset_id
         params = query.to_params()
-        assert "consultant_name IS NULL" in params["$where"]
+        assert "cnslt_name IS NULL" in params["$where"]
         assert "2024" in params["$where"]
 
     def test_with_state(self) -> None:
@@ -74,6 +74,7 @@ class TestConsultantPortfolioQuery:
         params = query.to_params()
         assert "LIKE" in params["$where"]
         assert "%Acme Corp%" in params["$where"]
+        assert "cnslt_name" in params["$where"]
 
     def test_with_year(self) -> None:
         _, query = consultant_portfolio_query("Acme", funding_year=2024)
