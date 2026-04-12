@@ -7,7 +7,9 @@ import re
 from typing import Any
 
 _FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
-_ORDER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\s+(ASC|DESC))?$", re.IGNORECASE)
+_ORDER_RE = re.compile(
+    r"^(:id|[a-zA-Z_][a-zA-Z0-9_]*)(\s+(ASC|DESC))?$", re.IGNORECASE,
+)
 _SELECT_RE = re.compile(
     r"^[a-zA-Z_][a-zA-Z0-9_]*$"           # simple field
     r"|^[a-zA-Z_]+\(.*\)(\s+as\s+\w+)?$",  # aggregate expression
