@@ -26,7 +26,7 @@ class TestSoQLBuilder:
 
     def test_where_escapes_quotes(self) -> None:
         params = SoQLBuilder().where(name="O'Brien").to_params()
-        assert "O''Brien" in params["$where"]
+        assert params["$where"] == "name='O''Brien'"
 
     def test_where_raw(self) -> None:
         params = SoQLBuilder().where_raw("cost > 100").to_params()
@@ -49,7 +49,7 @@ class TestSoQLBuilder:
 
     def test_where_in_escapes(self) -> None:
         params = SoQLBuilder().where_in("name", ["O'Brien"]).to_params()
-        assert "O''Brien" in params["$where"]
+        assert params["$where"] == "name IN ('O''Brien')"
 
     def test_where_between(self) -> None:
         params = SoQLBuilder().where_between("cost", 100, 500).to_params()
@@ -57,8 +57,7 @@ class TestSoQLBuilder:
 
     def test_where_between_escapes(self) -> None:
         params = SoQLBuilder().where_between("name", "O'A", "O'Z").to_params()
-        assert "O''A" in params["$where"]
-        assert "O''Z" in params["$where"]
+        assert params["$where"] == "name BETWEEN 'O''A' AND 'O''Z'"
 
     def test_where_like(self) -> None:
         params = SoQLBuilder().where_like("name", "%test%").to_params()
@@ -66,7 +65,7 @@ class TestSoQLBuilder:
 
     def test_where_like_escapes(self) -> None:
         params = SoQLBuilder().where_like("name", "O'%").to_params()
-        assert "O''%" in params["$where"]
+        assert params["$where"] == "name LIKE 'O''%'"
 
     def test_full_text(self) -> None:
         params = SoQLBuilder().full_text("school").to_params()
