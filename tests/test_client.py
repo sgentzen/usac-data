@@ -156,6 +156,77 @@ class TestSyncContextManager:
             client.get(DATASET_ID)
 
 
+class TestPaginationEdgeCases:
+    def test_paginate_exact_page_boundary(self, httpx_mock: HTTPXMock) -> None:
+        """When rows are a perfect multiple of page_size, a trailing empty fetch terminates."""
+        client = USACClient(page_size=2)
+        httpx_mock.add_response(json=[{"a": 1}, {"b": 2}])
+        httpx_mock.add_response(json=[{"c": 3}, {"d": 4}])
+        httpx_mock.add_response(json=[])
+
+        all_rows = client.paginate(DATASET_ID)
+        assert len(all_rows) == 4
+        assert len(httpx_mock.get_requests()) == 3
+
+    def test_paginate_partial_last_page(self, httpx_mock: HTTPXMock) -> None:
+        """Fewer rows than page_size on first batch stops after a single request."""
+        client = USACClient(page_size=10)
+        httpx_mock.add_response(json=[{"a": 1}, {"b": 2}, {"c": 3}])
+
+        all_rows = client.paginate(DATASET_ID)
+        assert len(all_rows) == 3
+        assert len(httpx_mock.get_requests()) == 1
+
+    def test_paginate_second_page_uses_offset(self, httpx_mock: HTTPXMock) -> None:
+        """The second page request must include $offset equal to page_size."""
+        client = USACClient(page_size=2)
+        httpx_mock.add_response(json=[{"a": 1}, {"b": 2}])
+        httpx_mock.add_response(json=[{"c": 3}])
+
+        client.paginate(DATASET_ID)
+        second_request = httpx_mock.get_requests()[1]
+        assert "$offset=2" in str(second_request.url) or "%24offset=2" in str(second_request.url)
+
+
+class TestRetryEdgeCases:
+    def test_retry_wait_503_uses_exponential_backoff(self, client: USACClient) -> None:
+        from usac_data.client import RETRY_BACKOFF
+        response = httpx.Response(503, request=httpx.Request("GET", ENDPOINT))
+        exc = httpx.HTTPStatusError("503", request=response.request, response=response)
+        assert client._retry_wait(exc, 0) == RETRY_BACKOFF * (2**0)
+        assert client._retry_wait(exc, 1) == RETRY_BACKOFF * (2**1)
+        assert client._retry_wait(exc, 2) == RETRY_BACKOFF * (2**2)
+
+    def test_retry_wait_429_invalid_header_falls_back(self, client: USACClient) -> None:
+        response = httpx.Response(
+            429,
+            headers={"Retry-After": "not-a-number"},
+            request=httpx.Request("GET", ENDPOINT),
+        )
+        exc = httpx.HTTPStatusError("429", request=response.request, response=response)
+        assert client._retry_wait(exc, 0) == 30.0
+
+    def test_retry_wait_429_no_header_falls_back(self, client: USACClient) -> None:
+        response = httpx.Response(429, request=httpx.Request("GET", ENDPOINT))
+        exc = httpx.HTTPStatusError("429", request=response.request, response=response)
+        assert client._retry_wait(exc, 0) == 30.0
+
+    def test_retry_on_transport_error(self, httpx_mock: HTTPXMock, client: USACClient) -> None:
+        httpx_mock.add_exception(httpx.ConnectError("connection refused"))
+        httpx_mock.add_response(json=[{"ok": True}])
+
+        rows = client.get(DATASET_ID)
+        assert rows == [{"ok": True}]
+        assert len(httpx_mock.get_requests()) == 2
+
+    def test_no_retry_on_4xx_non_429(self, httpx_mock: HTTPXMock, client: USACClient) -> None:
+        httpx_mock.add_response(status_code=403)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            client.get(DATASET_ID)
+        assert len(httpx_mock.get_requests()) == 1
+
+
 class TestBuildParams:
     def test_defaults(self, client: USACClient) -> None:
         params = client._build_params()
