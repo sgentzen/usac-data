@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import re
 from typing import Any
 
@@ -22,6 +21,11 @@ def _validate_field(name: str) -> str:
     if not _FIELD_RE.match(name):
         raise ValueError(f"Invalid SoQL field name: {name!r}")
     return name
+
+
+def _escape_soql_literal(value: Any) -> str:
+    """Escape a value for use inside a SoQL single-quoted string literal."""
+    return str(value).replace("'", "''")
 
 
 class SoQLBuilder:
@@ -54,7 +58,16 @@ class SoQLBuilder:
         self._q: str | None = None  # full-text search
 
     def copy(self) -> SoQLBuilder:
-        return copy.deepcopy(self)
+        clone = SoQLBuilder()
+        clone._select = self._select[:]
+        clone._where = self._where[:]
+        clone._order = self._order[:]
+        clone._group = self._group[:]
+        clone._having = self._having[:]
+        clone._limit = self._limit
+        clone._offset = self._offset
+        clone._q = self._q
+        return clone
 
     def select(self, *fields: str) -> SoQLBuilder:
         """Set $select fields."""
@@ -80,8 +93,7 @@ class SoQLBuilder:
             if value is None:
                 self._where.append(f"{field} IS NULL")
             else:
-                escaped = str(value).replace("'", "''")
-                self._where.append(f"{field}='{escaped}'")
+                self._where.append(f"{field}='{_escape_soql_literal(value)}'")
         return self
 
     def where_raw(self, clause: str) -> SoQLBuilder:
@@ -96,23 +108,22 @@ class SoQLBuilder:
     def where_in(self, field: str, values: list[Any]) -> SoQLBuilder:
         """Add field IN (...) filter."""
         _validate_field(field)
-        escaped = ", ".join(f"'{str(v).replace(chr(39), chr(39)*2)}'" for v in values)
+        escaped = ", ".join(f"'{_escape_soql_literal(v)}'" for v in values)
         self._where.append(f"{field} IN ({escaped})")
         return self
 
     def where_between(self, field: str, low: Any, high: Any) -> SoQLBuilder:
         """Add field BETWEEN low AND high filter."""
         _validate_field(field)
-        low_escaped = str(low).replace("'", "''")
-        high_escaped = str(high).replace("'", "''")
-        self._where.append(f"{field} BETWEEN '{low_escaped}' AND '{high_escaped}'")
+        self._where.append(
+            f"{field} BETWEEN '{_escape_soql_literal(low)}' AND '{_escape_soql_literal(high)}'"
+        )
         return self
 
     def where_like(self, field: str, pattern: str) -> SoQLBuilder:
         """Add field LIKE pattern filter."""
         _validate_field(field)
-        escaped = pattern.replace("'", "''")
-        self._where.append(f"{field} LIKE '{escaped}'")
+        self._where.append(f"{field} LIKE '{_escape_soql_literal(pattern)}'")
         return self
 
     def full_text(self, search: str) -> SoQLBuilder:

@@ -9,7 +9,7 @@ from __future__ import annotations
 from usac_data.datasets.c2_budget import C2BudgetTool
 from usac_data.datasets.consultants import Consultants
 from usac_data.datasets.form471 import Form471
-from usac_data.query import SoQLBuilder
+from usac_data.query import SoQLBuilder, _escape_soql_literal
 
 
 def c2_budget_remaining_query(
@@ -22,8 +22,7 @@ def c2_budget_remaining_query(
     """
     q = C2BudgetTool.with_remaining(min_remaining)
     if state:
-        escaped = state.upper().replace("'", "''")
-        q = q.where_raw(f"upper(state)='{escaped}'")
+        q = q.where_raw(f"upper(state)='{_escape_soql_literal(state.upper())}'")
     q = q.order_by("available_c2_budget_amount DESC")
     return C2BudgetTool.dataset_id, q
 
@@ -47,8 +46,7 @@ def entities_without_consultant_query(
     if state:
         # Note: The Form 471 Consultants dataset does not have a state column.
         # This filter will only work if the dataset actually contains such a field.
-        escaped = state.upper().replace("'", "''")
-        q = q.where_raw(f"upper(state)='{escaped}'")
+        q = q.where_raw(f"upper(state)='{_escape_soql_literal(state.upper())}'")
     return Consultants.dataset_id, q
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from usac_data.datasets import DatasetMeta
-from usac_data.query import SoQLBuilder
+from usac_data.query import SoQLBuilder, _escape_soql_literal
 
 
 class EntityInfo(DatasetMeta):
@@ -47,5 +47,5 @@ class EntityInfo(DatasetMeta):
         Note: This dataset uses ``physical_state`` rather than ``state``.
         """
         return SoQLBuilder().where_raw(
-            f"upper(physical_state)='{state.upper().replace(chr(39), chr(39)*2)}'"
+            f"upper(physical_state)='{_escape_soql_literal(state.upper())}'"
         )
