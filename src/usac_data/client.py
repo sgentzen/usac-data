@@ -144,15 +144,13 @@ class USACClient:
             return 30.0  # default for 429 without Retry-After
         return RETRY_BACKOFF * (2**attempt)
 
-    def _handle_retry_exc(
+    def _log_retry(
         self,
         exc: httpx.HTTPStatusError | httpx.TransportError,
         attempt: int,
         dataset_id: str,
     ) -> float:
-        """Validate retryability, log, and return seconds to wait. Raises if not retryable."""
-        if isinstance(exc, httpx.HTTPStatusError) and not self._is_retryable(exc):
-            raise exc
+        """Compute wait time and emit a retry warning. Caller must verify retryability first."""
         wait = (
             self._retry_wait(exc, attempt)
             if isinstance(exc, httpx.HTTPStatusError)
@@ -181,7 +179,9 @@ class USACClient:
                 return resp.json()  # type: ignore[no-any-return]
             except (httpx.HTTPStatusError, httpx.TransportError) as exc:
                 last_exc = exc
-                time.sleep(self._handle_retry_exc(exc, attempt, dataset_id))
+                if isinstance(exc, httpx.HTTPStatusError) and not self._is_retryable(exc):
+                    raise
+                time.sleep(self._log_retry(exc, attempt, dataset_id))
         raise USACRetryError(dataset_id, self.max_retries) from last_exc
 
     async def _fetch_async(
@@ -197,7 +197,9 @@ class USACClient:
                 return resp.json()  # type: ignore[no-any-return]
             except (httpx.HTTPStatusError, httpx.TransportError) as exc:
                 last_exc = exc
-                await asyncio.sleep(self._handle_retry_exc(exc, attempt, dataset_id))
+                if isinstance(exc, httpx.HTTPStatusError) and not self._is_retryable(exc):
+                    raise
+                await asyncio.sleep(self._log_retry(exc, attempt, dataset_id))
         raise USACRetryError(dataset_id, self.max_retries) from last_exc
 
     # -- Public API --

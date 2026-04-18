@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import unquote
+
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
@@ -108,7 +110,7 @@ class TestUSACClientSync:
 
         client.paginate(DATASET_ID)
         request = httpx_mock.get_requests()[0]
-        assert "%24order=%3Aid" in str(request.url) or "$order=:id" in str(request.url)
+        assert "$order=:id" in unquote(str(request.url))
 
     def test_count(self, httpx_mock: HTTPXMock, client: USACClient) -> None:
         httpx_mock.add_response(json=[{"count": "42"}])
@@ -185,7 +187,7 @@ class TestPaginationEdgeCases:
 
         client.paginate(DATASET_ID)
         second_request = httpx_mock.get_requests()[1]
-        assert "$offset=2" in str(second_request.url) or "%24offset=2" in str(second_request.url)
+        assert "$offset=2" in unquote(str(second_request.url))
 
 
 class TestRetryEdgeCases:
