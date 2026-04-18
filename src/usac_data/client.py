@@ -30,6 +30,14 @@ class USACClient:
     Supports both sync and async usage. Handles automatic pagination,
     retries with exponential backoff, and optional app token auth.
 
+    Retries and timeouts:
+        - Retries on 429 (rate limit) and 5xx errors; raises immediately on other 4xx.
+        - Exponential backoff: ``RETRY_BACKOFF * 2 ** attempt`` seconds (1s, 2s, 4s, ...).
+        - Respects the ``Retry-After`` response header for 429; falls back to 30s if absent
+          or non-numeric.
+        - Default timeout: 30s (configurable via the ``timeout`` constructor argument).
+        - Default retry limit: 3 attempts (configurable via ``max_retries``).
+
     Examples:
         Sync usage::
 
