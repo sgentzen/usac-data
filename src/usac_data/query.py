@@ -15,6 +15,16 @@ _SELECT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Socrata SODA API query parameter keys
+PARAM_SELECT = "$select"
+PARAM_WHERE = "$where"
+PARAM_ORDER = "$order"
+PARAM_GROUP = "$group"
+PARAM_HAVING = "$having"
+PARAM_LIMIT = "$limit"
+PARAM_OFFSET = "$offset"
+PARAM_Q = "$q"
+
 
 def _validate_field(name: str) -> str:
     """Validate that a field name contains only safe characters."""
@@ -167,19 +177,19 @@ class SoQLBuilder:
         """Convert to SODA API query parameters dict."""
         params: dict[str, str] = {}
         if self._select:
-            params["$select"] = ",".join(self._select)
+            params[PARAM_SELECT] = ",".join(self._select)
         if self._where:
-            params["$where"] = " AND ".join(self._where)
+            params[PARAM_WHERE] = " AND ".join(self._where)
         if self._order:
-            params["$order"] = ",".join(self._order)
+            params[PARAM_ORDER] = ",".join(self._order)
         if self._group:
-            params["$group"] = ",".join(self._group)
+            params[PARAM_GROUP] = ",".join(self._group)
         if self._having:
-            params["$having"] = " AND ".join(self._having)
+            params[PARAM_HAVING] = " AND ".join(self._having)
         if self._limit is not None:
-            params["$limit"] = str(self._limit)
+            params[PARAM_LIMIT] = str(self._limit)
         if self._offset is not None:
-            params["$offset"] = str(self._offset)
+            params[PARAM_OFFSET] = str(self._offset)
         if self._q:
-            params["$q"] = self._q
+            params[PARAM_Q] = self._q
         return params

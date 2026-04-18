@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 from usac_data.exceptions import USACRetryError
-from usac_data.query import SoQLBuilder
+from usac_data.query import PARAM_LIMIT, PARAM_OFFSET, PARAM_ORDER, SoQLBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -109,13 +109,13 @@ class USACClient:
     ) -> dict[str, str]:
         params = query.to_params() if query else {}
 
-        params["$limit"] = str(limit or self.page_size)
+        params[PARAM_LIMIT] = str(limit or self.page_size)
         if offset:
-            params["$offset"] = str(offset)
+            params[PARAM_OFFSET] = str(offset)
         # Ensure stable ordering for paginated queries to avoid
         # duplicate or missing rows when data changes between pages.
-        if ensure_order and "$order" not in params:
-            params["$order"] = ":id"
+        if ensure_order and PARAM_ORDER not in params:
+            params[PARAM_ORDER] = ":id"
         return params
 
     @staticmethod
