@@ -195,9 +195,9 @@ class TestRetryEdgeCases:
         from usac_data.client import RETRY_BACKOFF
         response = httpx.Response(503, request=httpx.Request("GET", ENDPOINT))
         exc = httpx.HTTPStatusError("503", request=response.request, response=response)
-        assert client._retry_wait(exc, 0) == RETRY_BACKOFF * (2**0)
-        assert client._retry_wait(exc, 1) == RETRY_BACKOFF * (2**1)
-        assert client._retry_wait(exc, 2) == RETRY_BACKOFF * (2**2)
+        assert client._retry_wait(exc, 0) == RETRY_BACKOFF * (2.0**0)
+        assert client._retry_wait(exc, 1) == RETRY_BACKOFF * (2.0**1)
+        assert client._retry_wait(exc, 2) == RETRY_BACKOFF * (2.0**2)
 
     def test_retry_wait_429_invalid_header_falls_back(self, client: USACClient) -> None:
         response = httpx.Response(
@@ -227,6 +227,56 @@ class TestRetryEdgeCases:
         with pytest.raises(httpx.HTTPStatusError):
             client.get(DATASET_ID)
         assert len(httpx_mock.get_requests()) == 1
+
+
+class TestLazyClientInit:
+    def test_sync_client_not_created_until_first_use(self) -> None:
+        client = USACClient()
+        assert client._sync_client is None
+
+    def test_async_client_not_created_until_first_use(self) -> None:
+        client = USACClient()
+        assert client._async_client is None
+
+    def test_close_without_sync_use_does_not_raise(self) -> None:
+        client = USACClient()
+        client.close()  # must not construct or raise
+        assert client._sync_client is None
+
+    async def test_aclose_without_async_use_does_not_raise(self) -> None:
+        client = USACClient()
+        await client.aclose()  # must not construct or raise
+        assert client._async_client is None
+
+    def test_sync_client_created_on_first_get(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(json=[])
+        client = USACClient()
+        client.get(DATASET_ID)
+        assert client._sync_client is not None
+        assert client._async_client is None
+
+    async def test_async_client_created_on_first_aget(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(json=[])
+        client = USACClient()
+        await client.aget(DATASET_ID)
+        assert client._async_client is not None
+        assert client._sync_client is None
+
+    def test_close_nulls_sync_client(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(json=[])
+        client = USACClient()
+        client.get(DATASET_ID)
+        assert client._sync_client is not None
+        client.close()
+        assert client._sync_client is None
+
+    async def test_aclose_nulls_async_client(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(json=[])
+        client = USACClient()
+        await client.aget(DATASET_ID)
+        assert client._async_client is not None
+        await client.aclose()
+        assert client._async_client is None
 
 
 class TestBuildParams:
