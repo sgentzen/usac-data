@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-04-19
+
+### Changed
+
+- `USACClient` no longer eagerly constructs both `httpx.Client` and
+  `httpx.AsyncClient` on init. Each transport is created on first use, so
+  sync-only callers pay no async pool overhead and vice versa. (0ed9241)
+- `close()` / `aclose()` are now no-ops when the respective transport was
+  never created, and null out the reference after closing to prevent silent
+  reuse of a closed client. (0ed9241)
+
+### Fixed
+
+- Backoff expression `RETRY_BACKOFF * (2**attempt)` changed to
+  `RETRY_BACKOFF * (2.0**attempt)` to resolve a mypy strict `no-any-return`
+  warning that was previously suppressed. (0ed9241)
+
 ## [0.1.2] - 2026-04-18
 
 ### Changed
