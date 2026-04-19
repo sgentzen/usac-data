@@ -71,20 +71,27 @@ class USACClient:
         self.page_size = page_size
         self.max_retries = max_retries
 
-        headers: dict[str, str] = {"Accept": "application/json"}
+        self._headers: dict[str, str] = {"Accept": "application/json"}
         if app_token:
-            headers["X-App-Token"] = app_token
+            self._headers["X-App-Token"] = app_token
+        self._timeout = timeout
 
-        self._sync_client = httpx.Client(
-            base_url=BASE_URL,
-            headers=headers,
-            timeout=timeout,
-        )
-        self._async_client = httpx.AsyncClient(
-            base_url=BASE_URL,
-            headers=headers,
-            timeout=timeout,
-        )
+        self._sync_client: httpx.Client | None = None
+        self._async_client: httpx.AsyncClient | None = None
+
+    def _get_sync_client(self) -> httpx.Client:
+        if self._sync_client is None:
+            self._sync_client = httpx.Client(
+                base_url=BASE_URL, headers=dict(self._headers), timeout=self._timeout
+            )
+        return self._sync_client
+
+    def _get_async_client(self) -> httpx.AsyncClient:
+        if self._async_client is None:
+            self._async_client = httpx.AsyncClient(
+                base_url=BASE_URL, headers=dict(self._headers), timeout=self._timeout
+            )
+        return self._async_client
 
     # -- Lifecycle --
 
@@ -101,10 +108,14 @@ class USACClient:
         await self.aclose()
 
     async def aclose(self) -> None:
-        await self._async_client.aclose()
+        if self._async_client is not None:
+            await self._async_client.aclose()
+            self._async_client = None
 
     def close(self) -> None:
-        self._sync_client.close()
+        if self._sync_client is not None:
+            self._sync_client.close()
+            self._sync_client = None
 
     # -- Core fetch with retries --
 
@@ -142,7 +153,7 @@ class USACClient:
                 except (ValueError, TypeError):
                     pass
             return 30.0  # default for 429 without Retry-After
-        return RETRY_BACKOFF * (2**attempt)
+        return RETRY_BACKOFF * (2.0**attempt)
 
     def _log_retry(
         self,
@@ -154,7 +165,7 @@ class USACClient:
         wait = (
             self._retry_wait(exc, attempt)
             if isinstance(exc, httpx.HTTPStatusError)
-            else RETRY_BACKOFF * (2**attempt)
+            else RETRY_BACKOFF * (2.0**attempt)
         )
         logger.warning(
             "Retry %d/%d for %s (wait %.1fs): %s",
@@ -174,7 +185,7 @@ class USACClient:
         last_exc: Exception | None = None
         for attempt in range(self.max_retries):
             try:
-                resp = self._sync_client.get(f"/{dataset_id}.json", params=params)
+                resp = self._get_sync_client().get(f"/{dataset_id}.json", params=params)
                 resp.raise_for_status()
                 return resp.json()  # type: ignore[no-any-return]
             except (httpx.HTTPStatusError, httpx.TransportError) as exc:
@@ -192,7 +203,7 @@ class USACClient:
         last_exc: Exception | None = None
         for attempt in range(self.max_retries):
             try:
-                resp = await self._async_client.get(f"/{dataset_id}.json", params=params)
+                resp = await self._get_async_client().get(f"/{dataset_id}.json", params=params)
                 resp.raise_for_status()
                 return resp.json()  # type: ignore[no-any-return]
             except (httpx.HTTPStatusError, httpx.TransportError) as exc:
