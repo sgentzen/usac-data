@@ -1,6 +1,6 @@
 """Python client for USAC E-Rate Open Data (Socrata SODA API)."""
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 from usac_data.client import USACClient
 from usac_data.datasets import C2BudgetTool, Consultants, DatasetMeta, EntityInfo, Form471
