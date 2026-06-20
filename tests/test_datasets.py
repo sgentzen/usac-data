@@ -53,9 +53,19 @@ class TestC2BudgetTool:
         params = C2BudgetTool.with_remaining().to_params()
         assert "available_c2_budget_amount > 0" in params["$where"]
 
-    def test_with_remaining_rejects_string(self) -> None:
-        with pytest.raises(TypeError, match="must be a number"):
+    def test_with_remaining_rejects_injection(self) -> None:
+        # min_remaining is interpolated raw into the SoQL WHERE clause (Socrata
+        # has no bind params), so a non-numeric argument must be rejected rather
+        # than smuggled into the query.
+        with pytest.raises(ValueError):
             C2BudgetTool.with_remaining("0 OR 1=1")  # type: ignore[arg-type]
+
+    def test_with_remaining_rejects_non_finite(self) -> None:
+        # nan/inf coerce fine but yield an always-false comparison and silently
+        # empty results, so reject them rather than build a misleading query.
+        for bad in ("nan", "inf", float("nan"), float("inf")):
+            with pytest.raises(ValueError):
+                C2BudgetTool.with_remaining(bad)  # type: ignore[arg-type]
 
 
 class TestConsultants:

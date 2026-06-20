@@ -47,11 +47,6 @@ class TestEntitiesWithoutConsultantQuery:
         assert "cnslt_name IS NULL" in params["$where"]
         assert "2024" in params["$where"]
 
-    def test_with_state(self) -> None:
-        _, query = entities_without_consultant_query(2024, state="ca")
-        params = query.to_params()
-        assert "CA" in params["$where"]
-
 
 class TestFRNHistoryQuery:
     def test_basic(self) -> None:

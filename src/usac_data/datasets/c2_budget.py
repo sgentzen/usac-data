@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from usac_data.datasets import DatasetMeta
 from usac_data.query import SoQLBuilder
 
@@ -32,11 +34,17 @@ class C2BudgetTool(DatasetMeta):
 
     @classmethod
     def with_remaining(cls, min_remaining: float = 0) -> SoQLBuilder:
-        """Query entities with at least ``min_remaining`` C2 budget left."""
-        if not isinstance(min_remaining, (int, float)):
-            raise TypeError(
-                f"min_remaining must be a number, got {type(min_remaining).__name__}"
-            )
+        """Query entities with at least ``min_remaining`` C2 budget left.
+
+        ``min_remaining`` is interpolated directly into the raw SoQL ``$where``
+        clause (Socrata SODA has no bind parameters), so it is coerced to
+        ``float`` first. This makes the numeric constraint structural rather
+        than relying on the runtime-unenforced type hint; non-numeric or
+        non-finite input raises ``ValueError``. Do not remove the coercion.
+        """
+        amount = float(min_remaining)
+        if not math.isfinite(amount):
+            raise ValueError(f"min_remaining must be a finite number, got {min_remaining!r}")
         return SoQLBuilder().where_raw(
-            f"available_c2_budget_amount > {min_remaining}"
+            f"available_c2_budget_amount > {amount}"
         )
