@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-06-20
+
+### Security
+
+- `C2BudgetTool.with_remaining()` now coerces `min_remaining` to `float` before
+  interpolating it into the raw SoQL `$where` clause. The value is built into the
+  query string unescaped (Socrata SODA has no bind parameters), so a non-numeric
+  argument such as `"0 OR 1=1"` could otherwise be smuggled into the query. The
+  coercion makes the numeric constraint structural rather than relying on the
+  (runtime-unenforced) type hint; non-numeric or non-finite (`nan`/`inf`) input
+  now raises `ValueError`. This replaces the `isinstance` guard that was briefly
+  removed during a refactor.
+
+### Removed
+
+- Dropped the non-functional `state` parameter from
+  `entities_without_consultant_query()`. The Form 471 Consultants dataset has no
+  `state` column, so the filter produced a query that the API rejects. Match
+  against `EntityInfo` by `organization_name` for state-level filtering.
+
 ## [0.1.3] - 2026-04-19
 
 ### Changed

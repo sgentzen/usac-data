@@ -29,12 +29,15 @@ def c2_budget_remaining_query(
 
 def entities_without_consultant_query(
     funding_year: int,
-    state: str | None = None,
 ) -> tuple[str, SoQLBuilder]:
     """Build query for Form 471 consultant filings with no consultant listed.
 
     Queries the Form 471 Consultants dataset for filings where
     ``cnslt_name`` is NULL (i.e., entity filed without a consultant).
+
+    Note: The Consultants dataset has no ``state`` column, so results cannot be
+    filtered by state at the source. Match against :class:`EntityInfo` by
+    ``organization_name`` if you need state-level filtering.
 
     Returns (dataset_id, query) tuple.
     """
@@ -43,10 +46,6 @@ def entities_without_consultant_query(
         .where(funding_year=funding_year)
         .where_raw("cnslt_name IS NULL")
     )
-    if state:
-        # Note: The Form 471 Consultants dataset does not have a state column.
-        # This filter will only work if the dataset actually contains such a field.
-        q = q.where_raw(f"upper(state)='{_escape_soql_literal(state.upper())}'")
     return Consultants.dataset_id, q
 
 
