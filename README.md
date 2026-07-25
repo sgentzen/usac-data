@@ -53,14 +53,44 @@ q = (
 
 ## Datasets
 
-| Class | Description |
-|-------|-------------|
-| `Form471` | FRN line items from E-Rate applications |
-| `C2BudgetTool` | Category 2 five-year budget balances |
-| `Consultants` | Consultant associations per application |
-| `EntityInfo` | School/library demographics and details |
+| Class | Dataset | Description |
+|-------|---------|-------------|
+| `Form471` | `qdmp-ygft` | FRN-level funding status |
+| `FRNLineItems` | `hbj5-2bpj` | Form 471 line-item detail: product, quantity, cost |
+| `RecipientCommitments` | `avi8-svp9` | Recipient detail and committed amounts |
+| `C2BudgetTool` | `6brt-5pbv` | Category 2 five-year budget balances |
+| `Consultants` | `x5px-esft` | Consultant associations per application |
+| `EntityInfo` | `7i5i-83qf` | School/library demographics and details |
 
 Each dataset class exposes field names as class attributes and convenience query methods.
+
+### Column naming differs between datasets
+
+These feeds do not agree on column names, and the two failure modes are different.
+Check the class docstring before writing a filter.
+
+- `FRNLineItems` uses **`ben`**. It has no `billed_entity_number` and no
+  `chosen_category_of_service`; filtering on either returns HTTP 400
+  `query.soql.no-such-column`, a hard failure.
+- `RecipientCommitments` uses **`billed_entity_number`**. The post-discount
+  committed amount is `post_discount_extended_eligible_line_item_costs` (there is
+  no `total_authorized_disbursement`), and the discount percentage is `dis_pct`,
+  not `discount_pct_c2`. Reading an absent field returns `None` silently, because
+  Socrata omits absent fields from row JSON rather than rejecting the request.
+
+```python
+from usac_data import USACClient, FRNLineItems, RecipientCommitments
+
+with USACClient() as client:
+    items = client.get(
+        FRNLineItems.dataset_id,
+        query=FRNLineItems.for_ben_year("123881", 2024),
+    )
+    commitments = client.get(
+        RecipientCommitments.dataset_id,
+        query=RecipientCommitments.for_ben_year("123881", 2024),
+    )
+```
 
 ## Helpers
 

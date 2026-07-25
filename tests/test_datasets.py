@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from usac_data.datasets import C2BudgetTool, Consultants, DatasetMeta, EntityInfo, Form471
+from usac_data.datasets import (
+    C2BudgetTool,
+    Consultants,
+    DatasetMeta,
+    EntityInfo,
+    Form471,
+    FRNLineItems,
+    RecipientCommitments,
+)
 from usac_data.datasets.form471 import FRNStatus, ServiceType
 
 
@@ -87,3 +95,76 @@ class TestEntityInfo:
         params = EntityInfo.in_state("va").to_params()
         assert "VA" in params["$where"]
         assert "physical_state" in params["$where"]
+
+
+class TestFRNLineItems:
+    def test_dataset_id(self) -> None:
+        assert FRNLineItems.dataset_id == "hbj5-2bpj"
+
+    def test_is_not_form471(self) -> None:
+        # These are different datasets at different granularities. Conflating
+        # them queries the wrong data, so pin that they never converge.
+        assert FRNLineItems.dataset_id != Form471.dataset_id
+
+    def test_applicant_column_is_ben(self) -> None:
+        # This dataset has no billed_entity_number column; filtering on it
+        # returns HTTP 400 no-such-column rather than an empty result.
+        assert FRNLineItems.ben == "ben"
+        assert not hasattr(FRNLineItems, "billed_entity_number")
+
+    def test_has_no_service_provider_or_status_fields(self) -> None:
+        # Absent upstream. Guards against re-adding them from a sibling dataset.
+        for absent in (
+            "billed_entity_number",
+            "chosen_category_of_service",
+            "spin_name",
+            "spin_number",
+            "form_471_frn_status_name",
+            "org_state",
+        ):
+            assert not hasattr(FRNLineItems, absent), absent
+
+    def test_for_ben(self) -> None:
+        params = FRNLineItems.for_ben("123456").to_params()
+        assert params["$where"] == "ben='123456'"
+
+    def test_for_ben_year(self) -> None:
+        params = FRNLineItems.for_ben_year("123456", 2024).to_params()
+        assert "ben='123456'" in params["$where"]
+        assert "funding_year='2024'" in params["$where"]
+
+    def test_for_ben_escapes_quotes(self) -> None:
+        params = FRNLineItems.for_ben("12'3456").to_params()
+        assert params["$where"] == "ben='12''3456'"
+
+
+class TestRecipientCommitments:
+    def test_dataset_id(self) -> None:
+        assert RecipientCommitments.dataset_id == "avi8-svp9"
+
+    def test_applicant_column_is_billed_entity_number(self) -> None:
+        # Opposite convention to FRNLineItems, which uses ben.
+        assert RecipientCommitments.billed_entity_number == "billed_entity_number"
+        assert not hasattr(RecipientCommitments, "ben")
+
+    def test_post_discount_amount_field_name(self) -> None:
+        # There is no total_authorized_disbursement column here; reading it
+        # yields None silently because Socrata omits absent fields from rows.
+        assert (
+            RecipientCommitments.post_discount_extended_eligible_line_item_costs
+            == "post_discount_extended_eligible_line_item_costs"
+        )
+        assert not hasattr(RecipientCommitments, "total_authorized_disbursement")
+
+    def test_discount_pct_field_name(self) -> None:
+        assert RecipientCommitments.dis_pct == "dis_pct"
+        assert not hasattr(RecipientCommitments, "discount_pct_c2")
+
+    def test_for_ben_year(self) -> None:
+        params = RecipientCommitments.for_ben_year("123456", "2024").to_params()
+        assert "billed_entity_number='123456'" in params["$where"]
+        assert "funding_year='2024'" in params["$where"]
+
+    def test_category_two_only(self) -> None:
+        params = RecipientCommitments.category_two_only().to_params()
+        assert params["$where"] == "chosen_category_of_service='Category2'"

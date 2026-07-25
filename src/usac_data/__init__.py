@@ -1,9 +1,17 @@
 """Python client for USAC E-Rate Open Data (Socrata SODA API)."""
 
-__version__ = "0.1.2"
+__version__ = "0.1.5"
 
 from usac_data.client import USACClient
-from usac_data.datasets import C2BudgetTool, Consultants, DatasetMeta, EntityInfo, Form471
+from usac_data.datasets import (
+    C2BudgetTool,
+    Consultants,
+    DatasetMeta,
+    EntityInfo,
+    Form471,
+    FRNLineItems,
+    RecipientCommitments,
+)
 from usac_data.exceptions import USACError, USACRetryError
 from usac_data.helpers import (
     c2_budget_remaining_query,
@@ -19,7 +27,9 @@ __all__ = [
     "Consultants",
     "DatasetMeta",
     "EntityInfo",
+    "FRNLineItems",
     "Form471",
+    "RecipientCommitments",
     "SoQLBuilder",
     "USACClient",
     "USACError",

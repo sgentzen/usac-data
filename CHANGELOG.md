@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-07-25
+
+### Added
+
+- `FRNLineItems` dataset (`hbj5-2bpj`), the FCC Form 471 line-item detail feed:
+  product, function, quantity and cost per line item. This is a different dataset
+  from `Form471` (`qdmp-ygft`), which is FRN-level status. Field names were
+  verified against the live column metadata rather than inferred.
+- `RecipientCommitments` dataset (`avi8-svp9`), recipient-level detail and
+  committed amounts, including the chosen category of service and pre- and
+  post-discount line-item costs.
+
+Both carry `for_ben()`, `for_year()` and `for_ben_year()` helpers;
+`RecipientCommitments` also has `category_two_only()`.
+
+### Fixed
+
+- `__version__` in `usac_data/__init__.py` was stuck at `0.1.2` while
+  `pyproject.toml` had moved to `0.1.4`. Both now read `0.1.5`.
+
+### Notes on the two new datasets
+
+They disagree with each other, and with `Form471`, on column naming. The classes
+document this and the tests pin it, because getting it wrong fails in two
+different ways:
+
+- `FRNLineItems` identifies the applicant as `ben`. It has **no**
+  `billed_entity_number` and **no** `chosen_category_of_service` column.
+  Filtering on either returns HTTP 400 `query.soql.no-such-column`, a hard
+  failure. It also carries no service-provider (`spin_name`, `spin_number`) or
+  FRN-status columns.
+- `RecipientCommitments` identifies the applicant as `billed_entity_number`. It
+  has **no** `total_authorized_disbursement` column; the post-discount committed
+  amount is `post_discount_extended_eligible_line_item_costs`, and the discount
+  percentage is `dis_pct`, not `discount_pct_c2`. Reading an absent field here
+  yields `None` silently, because Socrata omits absent fields from row JSON
+  instead of rejecting the request.
+
 ## [0.1.4] - 2026-06-20
 
 ### Security
