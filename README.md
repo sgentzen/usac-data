@@ -6,14 +6,16 @@ Provides typed dataset definitions, a fluent SoQL query builder, automatic pagin
 
 ## Install
 
-Not on PyPI yet — install from the repository:
+```bash
+pip install usac-data
+```
+
+Requires Python 3.11+. Versions before 0.1.6 were never published to PyPI; to
+install one of those, use a tag-pinned git URL instead:
 
 ```bash
 pip install "usac-data @ git+https://github.com/sgentzen/usac-data@v0.1.5"
 ```
-
-Pin to a tag as above rather than a bare branch URL. `usac_data.__version__`
-lets you confirm which revision actually got installed.
 
 ## Quick start
 
