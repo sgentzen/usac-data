@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- CI never ran. `.github/workflows/ci.yml` triggered on `branches: [main]`, but
+  this repository's default branch is `master`, so neither the `push` nor the
+  `pull_request` trigger ever matched. The workflow had zero recorded runs since
+  the repo was created — every release through 0.1.5, and PRs #1–#3, merged with
+  no automated lint, type check, or test run. Both triggers now name `master`.
+- CI lint step widened from `ruff check src/` to `ruff check .`, so `tests/` is
+  linted too. The project had two conflicting conventions — `docs/refactor-backlog.md`
+  verified with `ruff check .` while CI, `CONTRIBUTING.md` and `README.md` used
+  `ruff check src/`, meaning test code was never linted anywhere. All four now
+  say `ruff check .`. `tests/` is already clean under it, so this adds coverage
+  without requiring fixes.
+
+### Documentation
+
+- `README.md` no longer advertises `pip install usac-data`. The package has
+  never been published to PyPI (the name 404s), so that command could not
+  work for anyone following the README. Replaced with a tag-pinned
+  `git+https://` install.
+
 ## [0.1.5] - 2026-07-25
 
 ### Added
