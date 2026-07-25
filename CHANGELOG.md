@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.6] - 2026-07-25
+
+First release published to PyPI. Versions 0.1.0–0.1.5 exist only as git tags.
 
 ### Added
 
@@ -23,8 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moved to `0.1.4` (fixed in 0.1.5). Shipping that would have put a wheel on
   PyPI reporting a version different from its tag, uncorrectable in place.
 
-  **Requires one-time setup before it can succeed** — a pending Trusted
-  Publisher on PyPI and a `pypi` repository environment. See
+  The one-time setup this depends on — a Trusted Publisher registered on PyPI
+  and a `pypi` repository environment — is in place as of this release. See
   `docs/releasing.md`.
 
 - `docs/releasing.md` documenting the setup, the release procedure, and how to
@@ -46,10 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- `README.md` no longer advertises `pip install usac-data`. The package has
-  never been published to PyPI (the name 404s), so that command could not
-  work for anyone following the README. Replaced with a tag-pinned
-  `git+https://` install.
+- `README.md`'s `pip install usac-data` now actually works. Through 0.1.5 the
+  README advertised it while the package had never been published (the name
+  404'd on PyPI), so the command failed for anyone following the README. It is
+  correct as of this release; the git-URL install is kept alongside it for
+  earlier versions, which remain unpublished.
 
 ## [0.1.5] - 2026-07-25
 
