@@ -20,8 +20,8 @@ pip install -e ".[dev]"
 
 ```bash
 pytest                # tests
-ruff check src/       # linting
-ruff format src/      # formatting
+ruff check .          # linting (src/ and tests/)
+ruff format .         # formatting
 mypy src/             # type checking
 ```
 

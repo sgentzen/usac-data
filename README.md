@@ -6,9 +6,14 @@ Provides typed dataset definitions, a fluent SoQL query builder, automatic pagin
 
 ## Install
 
+Not on PyPI yet — install from the repository:
+
 ```bash
-pip install usac-data
+pip install "usac-data @ git+https://github.com/sgentzen/usac-data@v0.1.5"
 ```
+
+Pin to a tag as above rather than a bare branch URL. `usac_data.__version__`
+lets you confirm which revision actually got installed.
 
 ## Quick start
 
@@ -104,7 +109,7 @@ with USACClient() as client:
 ```bash
 pip install -e ".[dev]"
 pytest
-ruff check src/
+ruff check .
 mypy src/
 ```
 

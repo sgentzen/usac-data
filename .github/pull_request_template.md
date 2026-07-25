@@ -9,6 +9,6 @@ Brief description of what this PR does.
 ## Checklist
 
 - [ ] Tests added/updated
-- [ ] `ruff check src/` passes
+- [ ] `ruff check .` passes
 - [ ] `mypy src/` passes
 - [ ] CHANGELOG.md updated (if user-facing)
