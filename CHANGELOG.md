@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Release workflow (`.github/workflows/release.yml`) publishing to PyPI via
+  Trusted Publishing, so no PyPI API token is stored in the repository. It runs
+  only on a **published GitHub Release**, not on tag push — publishing is
+  irreversible (a version number cannot be reused, even after deletion), so it
+  requires a deliberate action rather than happening as a side effect of
+  tagging. Build and publish are separate jobs; only the publish job holds
+  `id-token: write`.
+
+  The workflow fails the build if the release tag, `pyproject.toml` and
+  `__version__` disagree. That is a guard against a drift this project has
+  already had once: `__version__` sat at `0.1.2` while `pyproject.toml` had
+  moved to `0.1.4` (fixed in 0.1.5). Shipping that would have put a wheel on
+  PyPI reporting a version different from its tag, uncorrectable in place.
+
+  **Requires one-time setup before it can succeed** — a pending Trusted
+  Publisher on PyPI and a `pypi` repository environment. See
+  `docs/releasing.md`.
+
+- `docs/releasing.md` documenting the setup, the release procedure, and how to
+  verify a build locally.
+
 ### Fixed
 
 - CI never ran. `.github/workflows/ci.yml` triggered on `branches: [main]`, but
