@@ -42,6 +42,12 @@ mypy src/             # type checking
 5. Re-export from `src/usac_data/datasets/__init__.py` and `src/usac_data/__init__.py`
 6. Add tests in `tests/`
 
+## Releasing
+
+Maintainers: see [docs/releasing.md](docs/releasing.md). Releases publish to
+PyPI from a GitHub Release via Trusted Publishing; pushing a tag alone does not
+publish anything.
+
 ## Reporting issues
 
 Open an issue at https://github.com/sgentzen/usac-data/issues with:
