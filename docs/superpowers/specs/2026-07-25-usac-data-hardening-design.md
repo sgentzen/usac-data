@@ -2,13 +2,11 @@
 
 **Date:** 2026-07-25
 **Status:** Design approved, pending implementation plan
-**Target versions:** 0.1.6 (correctness), 0.2.0 (consolidation and polish)
+**Target versions:** 0.1.7 (correctness), 0.2.0 (consolidation and polish)
 
 ## Context
 
-usac-data is the shared Socrata/SODA layer for the E-Rate portfolio. It is a
-public GitHub repository but not a published package. Consumers pin it by git
-URL:
+usac-data is the shared Socrata/SODA layer for the E-Rate portfolio. Consumers:
 
 - **erate-prospector** depends on `usac-data @ git+...@v0.1.4`.
 - **erate-shepherd** imports `USACClient`, `Form471`, `Consultants` and
@@ -16,17 +14,39 @@ URL:
 - **erate-filing-assistant** is mid-migration onto the package; 0.1.5 added the
   two dataset definitions that were blocking it.
 
-At v0.1.5 the package is 1,825 lines with 109 tests at 98 percent coverage,
-ruff and mypy strict clean on `src/`. The problems are at the edges rather than
-in the core, and two of them are behavioural bugs.
+At v0.1.6 the package is 1,825 lines with 109 tests at 98 percent coverage,
+ruff clean repository-wide and mypy strict clean on `src/`. The problems are at
+the edges rather than in the core, and two of them are behavioural bugs.
 
 An audit on 2026-07-25 produced the findings below. Each was reproduced rather
 than inferred.
 
+### Overtaken by PRs #4 to #7
+
+The audit ran against a snapshot at `c4437bf`. While it was in progress, PRs #4
+through #7 landed on `master` and released v0.1.6, resolving four findings
+before this spec was written. They are recorded here so the plan is not read as
+describing the current state:
+
+- **CI now runs.** `a6fa523` changed the workflow trigger from `main` to
+  `master`. The first execution in the project's history was on 2026-07-25;
+  ten runs now exist and PRs are gated.
+- **The package is on PyPI.** `c79bf6d` added a release workflow publishing via
+  Trusted Publishing, and 0.1.6 is live. `pip install usac-data` works, so the
+  README instruction needs no correction.
+- **Lint already covers the repository.** The workflow runs `ruff check .`, and
+  `7470d9f` aligned the PR template to match.
+- **Actions are on current runtimes.** `2a73762` moved to `checkout@v7` and
+  `setup-python@v7`.
+
+What survives is everything below: both behavioural bugs, the remaining
+verification gaps, drift protection, and the whole consolidation track.
+
 ## Goals
 
-1. Make the project's verification claims true, starting with continuous
-   integration that has never executed.
+1. Close the verification gaps CI still has: `tests/` is neither type-checked
+   nor covered by the matrix's newest interpreter, and nothing enforces
+   coverage.
 2. Fix two bugs that make the library do something other than what the caller
    asked for.
 3. Detect USAC schema and dataset drift before consumers do.
@@ -35,11 +55,10 @@ than inferred.
 
 ## Non-goals
 
-- **Publishing to PyPI.** Decided separately once the API settles. Until then
-  the README install instruction is corrected to the git URL rather than the
-  package being published. Consequently no SECURITY.md, no docs site, no
-  deprecation policy, and breaking changes stay cheap because every caller is
-  in-house.
+- **SECURITY.md, a docs site, or a deprecation policy.** The package is on PyPI
+  as of 0.1.6, but it has no known external users, so it is still governed as an
+  internal library. Breaking changes stay cheap because every caller is
+  in-house. Revisit if outside consumers appear.
 - **A caching layer.** erate-filing-assistant's SQLite `SodaCache` stays local.
 - **Implementing rate limiting.** The docstring that claims it is corrected, not
   made true.
@@ -52,17 +71,24 @@ than inferred.
 
 ## Findings
 
-### CI has never run
+### CI runs, but does not check everything it should
 
-`.github/workflows/ci.yml` triggers on `main`. The default branch is `master`.
-`gh api repos/sgentzen/usac-data/actions/runs` returns `total_count: 0`. Every
-"tests green, ruff clean, mypy strict clean" claim in CHANGELOG.md across five
-releases describes a local machine, not a verified build.
+The trigger is fixed and the workflow is green, so the remaining gaps are narrow
+but real:
 
-The workflow also lints and type-checks `src/` only. Running mypy over `tests/`
-today surfaces four `comparison-overlap` errors in `tests/test_datasets.py`
-(lines 44, 45, 48, 49), where `StrEnum` members are compared to string literals.
-The matrix stops at 3.13 while the development environment runs 3.14.
+- **`tests/` is not type-checked.** The workflow runs `mypy src/`. Running mypy
+  over `tests/` surfaces four `comparison-overlap` errors in
+  `tests/test_datasets.py` (lines 44, 45, 48, 49), where `StrEnum` members are
+  compared to string literals. Nothing catches these today.
+- **The matrix stops at 3.13** while the development environment runs 3.14.
+- **Nothing enforces coverage.** `pytest-cov` is used locally but is not
+  declared in the `dev` extra, so a coverage regression is invisible in CI.
+
+The historical point still worth recording: CI first executed on 2026-07-25,
+after five releases whose changelog entries claimed green tests, lint and types.
+Those claims described a local machine. The lesson generalises beyond this
+repository, and is why the drift work below assumes nothing is verified until a
+scheduled job proves it.
 
 ### `.limit(n)` on a builder is silently discarded
 
@@ -85,11 +111,6 @@ carries `$limit`, `$order` and `$offset` into the count request:
 SoQLBuilder().select("ben", "state").where(funding_year=2024)
 # count() sends $select=ben,state,count(*) as count
 ```
-
-### `pip install usac-data` does not work
-
-PyPI returns 404 for the name. README.md line 10 instructs users to run a
-command that cannot succeed.
 
 ### The client advertises rate limiting it does not have
 
@@ -169,15 +190,18 @@ a hard-coded id with no dataset class anywhere.
 ### Version is duplicated
 
 `pyproject.toml:7` and `src/usac_data/__init__.py:3` both carry the version.
-They drifted once already: 0.1.5 shipped a fix for `__version__` being stuck at
-0.1.2 while pyproject had moved to 0.1.4.
+They are in sync at 0.1.6, but they drifted once already: 0.1.5 shipped a fix
+for `__version__` being stuck at 0.1.2 while pyproject had moved to 0.1.4. Now
+that releases publish to PyPI automatically, a repeat would ship a wheel whose
+reported version disagrees with its metadata.
 
 ### Stale artefacts
 
 `docs/refactor-backlog.md` is fully discharged. Tasks 1 through 7 all shipped
 across 0.1.2 to 0.1.4 and are recorded in CHANGELOG.md. It is now a second,
 stale source of truth. Local `claude/*` branches and merged remote branches have
-accumulated. `dist/` holds 0.1.4 wheels beside a 0.1.5 source tree.
+accumulated. A local `dist/` holds hand-built wheels that predate the release
+workflow.
 
 ### Tests sleep for real
 
@@ -187,25 +211,24 @@ seconds and the suite takes about 10, because the retry paths call the real
 
 ## Approach
 
-Four pull requests, CI first.
+Four pull requests, verification first.
 
 The alternative of one 0.2.0 release is tempting for a package this small, but
-it makes the first CI execution in the project's history a large diff. That is
-the wrong moment to discover the workflow itself is misconfigured.
+PR 1 widens what CI actually checks, and every later PR wants to land under the
+widened checks rather than beside them. Fixing the four `tests/` type errors
+after adding two hundred lines of new tests is worse than fixing them first.
 
-CI ships alone and first, because until it lands no other PR's green tick means
-anything.
-
-## PR 1: revive CI
+## PR 1: close the CI gaps
 
 No source changes. Test-only and configuration-only.
 
 **`.github/workflows/ci.yml`**
 
-- `push` and `pull_request` trigger on `master`.
-- Lint step runs `ruff check .` (whole repository, not just `src/`).
-- Type-check step runs `mypy src/ tests/`.
+- Type-check step becomes `mypy src/ tests/`.
 - Matrix adds `"3.14"`.
+
+The trigger and the `ruff check .` scope are already correct as of `a6fa523`
+and need no change.
 
 **`tests/test_datasets.py`**
 
@@ -231,13 +254,12 @@ only prove the loop runs the right number of times.
 
 **Acceptance**
 
-- A workflow run appears in the Actions tab and is green on 3.11, 3.12, 3.13 and
-  3.14.
+- CI is green on 3.11, 3.12, 3.13 and 3.14.
 - `mypy src/ tests/` reports no errors.
 - `ruff check .` passes.
 - The suite completes in under three seconds locally, down from about ten.
 
-## PR 2: correctness (release 0.1.6)
+## PR 2: correctness (release 0.1.7)
 
 ### Limit precedence
 
@@ -292,13 +314,11 @@ grouping.
 
 ### Documentation corrections
 
-- Remove "and rate limiting" from the `client.py` module docstring.
-- README install section becomes the git URL form:
-  `pip install "usac-data @ git+https://github.com/sgentzen/usac-data.git@v0.1.6"`,
-  with a note that the package is not on PyPI.
+Remove "and rate limiting" from the `client.py` module docstring.
 
-The README quick-start needs no edit: once the limit bug is fixed,
-`Form471.for_year(2024).limit(10)` does what the example already claims.
+The README needs no other edit here. Its install section became true when 0.1.6
+went to PyPI, and the quick-start becomes true once the limit bug is fixed:
+`Form471.for_year(2024).limit(10)` will do what the example already claims.
 
 ### Single-source the version
 
@@ -322,8 +342,8 @@ drift that produced the 0.1.5 fix cannot recur silently.
   CHANGELOG.md 0.1.2 through 0.1.4. The one judgement worth keeping, Task 6's
   reasoning about why `with_remaining` coerces to float, already lives in the
   `C2BudgetTool.with_remaining` docstring and the 0.1.4 changelog entry.
-- Delete the stale `dist/` wheels (0.1.4 beside a 0.1.5 tree). They are
-  gitignored and local only.
+- Delete the stale local `dist/` wheels. They are gitignored and local only, and
+  releases now build from the workflow added in `c79bf6d`.
 - Run the `worktree-cleanup` skill over the accumulated `claude/*` branches
   rather than hard-coding a delete list here, so merge status is verified at the
   time rather than assumed.
@@ -337,7 +357,7 @@ drift that produced the 0.1.5 fix cannot recur silently.
 - `paginate(id, q.limit(25))` with `page_size=10` yields 25 rows in three
   requests, the last asking for 5.
 - Regression tests for each of the above.
-- CHANGELOG 0.1.6 entry under **Fixed**, calling the limit and count changes out
+- CHANGELOG 0.1.7 entry under **Fixed**, calling the limit and count changes out
   as behavioural.
 
 ## PR 3: drift protection
@@ -571,7 +591,7 @@ columns is not a failure, and pinning the full column set would produce noise.
 ignored would start receiving fewer rows. This is a fix rather than a
 regression, and the two known consumers do not set a builder limit before
 paginating: shepherd's `source.py` calls `paginate()` with filter-only queries.
-Verify against erate-prospector before releasing 0.1.6.
+Verify against erate-prospector before releasing 0.1.7.
 
 **Coverage floor as a ratchet.** Set at 95 against a current 98 so ordinary work
 does not trip it. Revisit only if it starts blocking rather than catching.
