@@ -43,7 +43,11 @@ than inferred.
 - **A caching layer.** erate-filing-assistant's SQLite `SodaCache` stays local.
 - **Implementing rate limiting.** The docstring that claims it is corrected, not
   made true.
-- **A `gfac-g858` dataset class.** See the finding below: it no longer exists.
+- **A `gfac-g858` dataset class.** See the finding below: it no longer exists and
+  its fields now live in `qdmp-ygft`.
+- **Classes for the Form 470 family or the Form 471 sibling tables.** Ten live
+  E-Rate datasets remain uncovered. Adding them is real work with its own
+  design questions and is tracked as a follow-up, not folded in here.
 
 ## Findings
 
@@ -91,19 +95,57 @@ command that cannot succeed.
 `client.py:1`: "Low-level SODA API transport with pagination, retries, and rate
 limiting." There is no rate limiting anywhere in the module.
 
-### `gfac-g858` has been withdrawn by USAC
+### Live source check, 2026-07-25
 
-A live check on 2026-07-25 returns 404 for `gfac-g858` (the "Skinny/Lite
-Deadline" view). erate-shepherd's `source.py:23-32` records the withdrawal and
-notes that no replacement exists in the catalogue, having enumerated 74 assets
-on 2026-07-24. The FRN Status dataset carries the same fields, so shepherd reads
-them off rows it already fetches.
+A full check was run against the live catalogue and column metadata. Findings
+below are verified, not inferred from the release notes alone.
 
-All six datasets usac-data currently declares, plus `jpiu-tj8h`, return 200.
+**No field drift.** All 132 fields declared across the six dataset classes still
+exist in live column metadata. Nothing usac-data declares has been renamed or
+removed.
 
-This is the strongest argument for drift protection in the list. A dataset the
-portfolio depended on disappeared roughly a day after being verified by hand,
-and nothing in usac-data would have noticed.
+**`gfac-g858` was absorbed, not lost.** The "Skinny/Lite Deadline" view returns
+404 and is absent from the catalogue, as is the older Post-Commitment tool
+`xzxx-in68`. Its schema moved into `qdmp-ygft`, which now carries
+`original_form_486_deadline`, `extension_request_for_invoicing`,
+`last_date_to_invoice`, `f486_case_status`, `service_delivery_deadline`,
+`invoicing_ready`, `spac_filed`, `remaining_extension_count` and `form_486_no`.
+Only `frn_remaining_amount` and `expired_frn` did not survive the move, matching
+erate-shepherd's `source.py:30-32` exactly. A new E-Rate Post-Commitment
+Deadline Tool was announced on 2026-07-22 but has no tabular asset, so there is
+nothing to add a class for.
+
+**Release notes, cross-checked against live schemas:**
+
+| Date | Announced | Verified |
+| --- | --- | --- |
+| 2026-07-22 | New Post-Commitment Deadline Tool | No tabular asset exists |
+| 2026-07-17 | `original_form_486_deadline`, `extension_request_for_invoicing` added to FRN Status | Both present in `qdmp-ygft` |
+| 2026-06-17 | `fcc_form_498_filed_with_uei` added to Entity Info | Present in `7i5i-83qf` |
+| 2026-06-03 | "Open Data updates once daily. Sending multiple API calls in a day will pull the same data, and increases the cost to USAC" | Provider request |
+
+**Declared field coverage is thin, and thinnest where it matters.** `Form471`
+declares 14 of 84 available columns and none of the nine post-commitment fields
+above, which are exactly what erate-shepherd built its deadline lattice from.
+`EntityInfo` declares 21 of 104, `RecipientCommitments` 30 of 67, `Consultants`
+5 of 17, `C2BudgetTool` 11 of 18.
+
+**All six `name` attributes are stale.** USAC renamed the Form 471 family to a
+consistent `E-Rate Request for Discount on Services: X (FCC Form 471 and Related
+Information)` scheme. The docstring dataset URLs still redirect correctly and
+need no change.
+
+**Uncovered E-Rate datasets.** The catalogue holds 74 assets, 32 of them
+tabular. Beyond `jpiu-tj8h`, usac-data covers none of the Form 470 family
+(`jt8s-3q52`, `jp7a-89nd`, `363f-22uh`, `g55z-erud`, `39tn-hjzv`), the Form 471
+sibling tables (`9s6i-myen` Basic Information, `ym44-rnhq` Connectivity,
+`upfy-khtr` Discount Calculations, `tuem-agyq` Recipients of Service), or
+`xcy2-bdid` Service Provider Information. All are live and updated daily.
+
+The withdrawal is the strongest argument for drift protection in this list. A
+dataset the portfolio depended on disappeared roughly a day after being verified
+by hand, its replacement fields landed in a different dataset five days before
+that, and nothing in usac-data noticed either event.
 
 ### Private API is being copied by consumers
 
@@ -330,6 +372,13 @@ This has value beyond the drift test: it is what any consumer needs to build a
   field is present.
 - Report all missing fields for a dataset in one assertion message rather than
   failing on the first, so a rename sweep is visible in a single run.
+- Print live columns that no class declares as informational output without
+  failing. The subset relation stays the pass condition, because USAC adding
+  columns is not a breakage, but the additions need to be visible: the
+  2026-07-17 arrival of `original_form_486_deadline` in `qdmp-ygft` is precisely
+  the event a silent subset check would have hidden.
+- Compare each class's `name` against the live asset name and report a mismatch
+  as informational, not a failure. All six are stale today.
 
 Verified endpoint shape on 2026-07-25: `/api/views/jpiu-tj8h.json` returns `id`,
 `name` and a `columns` array of 37 entries, each with `fieldName`.
@@ -338,7 +387,10 @@ Verified endpoint shape on 2026-07-25: `/api/views/jpiu-tj8h.json` returns `id`,
 
 `.github/workflows/drift.yml`:
 
-- `schedule: cron: "0 15 * * 1"` plus `workflow_dispatch`.
+- `schedule: cron: "0 15 * * 1"` plus `workflow_dispatch`. Weekly rather than
+  daily is deliberate: USAC has asked callers not to over-poll, and a schema
+  change that sits undetected for at most a week is not the failure mode worth
+  optimising against.
 - Single Python version. Runs `pytest -m live`.
 - `permissions: issues: write`.
 - On failure, search open issues labelled `drift`. If none exists, open one
@@ -389,6 +441,35 @@ The class documents what shepherd learned in production:
 A `for_frns(frns)` helper batches, since the FRN list is typically long;
 shepherd uses a batch size of 80.
 
+### `Form471` post-commitment fields
+
+Add the nine post-commitment columns that arrived in `qdmp-ygft` when
+`gfac-g858` was withdrawn: `original_form_486_deadline`,
+`extension_request_for_invoicing`, `last_date_to_invoice`, `f486_case_status`,
+`service_delivery_deadline`, `invoicing_ready`, `spac_filed`,
+`remaining_extension_count` and `form_486_no`.
+
+This is the highest-value addition in the PR. It is what erate-shepherd's
+deadline lattice reads, and declaring it here means the next consumer does not
+have to discover that FRN Status quietly became the post-commitment source.
+
+The class docstring records that `frn_remaining_amount` and `expired_frn` did
+**not** survive the move: remaining amount must be derived as committed less
+disbursed, and expiry from the last date to invoice.
+
+### Refresh stale dataset names
+
+All six `name` attributes predate USAC's rename of the Form 471 family. Update
+them to the live asset names. The docstring URLs still redirect and stay as they
+are.
+
+### Document the once-daily update cadence
+
+USAC's 2026-06-03 release note asks callers not to poll more than once a day,
+since the data refreshes daily and extra calls cost them money. Record this in
+the `USACClient` docstring and the README. usac-data has no caching layer and is
+not gaining one here, but consumers should not learn this from a support email.
+
 ### `iter_paginate()`
 
 The sync generator matching `apaginate()`. `paginate()` is reimplemented as
@@ -418,6 +499,8 @@ call form. CHANGELOG gains a 0.2.0 entry.
   query.
 - `client.get(Form471)` and `client.get(Form471.dataset_id)` issue the same
   request.
+- `pytest -m live` reports zero stale names and confirms all nine new `Form471`
+  fields against live metadata.
 
 ## Testing strategy
 
@@ -457,3 +540,9 @@ These are not part of this work but become possible once it lands:
 - **erate-filing-assistant:** two production bugs recorded in the memory graph
   under `usac-data--dataset-coverage-gap`, both still unfixed, both now
   addressable using the 0.1.5 dataset definitions.
+- **Ten uncovered E-Rate datasets.** The Form 470 family, the Form 471 sibling
+  tables and Service Provider Information. The Form 470 family is the
+  interesting one: erate-shepherd's onboarding checklist has a `form_470` step
+  that is currently derived and manual, and observing `jt8s-3q52` or
+  `jp7a-89nd` would turn it into the same observed-not-entered mechanism the
+  rest of that product runs on. Needs its own design conversation.
