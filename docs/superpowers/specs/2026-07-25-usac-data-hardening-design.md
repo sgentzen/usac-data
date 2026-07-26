@@ -45,9 +45,10 @@ than inferred.
   made true.
 - **A `gfac-g858` dataset class.** See the finding below: it no longer exists and
   its fields now live in `qdmp-ygft`.
-- **Classes for the Form 470 family or the Form 471 sibling tables.** Ten live
-  E-Rate datasets remain uncovered. Adding them is real work with its own
-  design questions and is tracked as a follow-up, not folded in here.
+- **Classes for the remaining uncovered datasets.** PR 4 adds `Form470`
+  (`jp7a-89nd`) and `Disbursements` (`jpiu-tj8h`). The other eight, including
+  the rest of the Form 470 family and the Form 471 sibling tables, stay a
+  tracked follow-up.
 
 ## Findings
 
@@ -441,6 +442,49 @@ The class documents what shepherd learned in production:
 A `for_frns(frns)` helper batches, since the FRN list is typically long;
 shepherd uses a batch size of 80.
 
+### `Form470` dataset
+
+`jp7a-89nd`, "E-Rate Open Competitive Bidding: Basic Information (FCC Form 470
+and Related Information)". 70 columns, verified live on 2026-07-25.
+
+**Why this dataset and not `jt8s-3q52`.** Both describe Form 470 filings.
+`jp7a-89nd` is application-level, one row per Form 470, keyed by `ben` and
+`funding_year`. `jt8s-3q52` is line-level, one row per service request, so a
+single form yields many rows and any "did they file?" question needs a dedupe
+first. The consuming question is whether a client filed for a funding year, so
+application grain is correct.
+
+Live check against BEN 143174 (a real erate-shepherd client) returned five rows
+spanning funding years 2018 to 2025 with `f470_status` values `Certified` and
+`Canceled`.
+
+Declared fields cover the filing lifecycle (`application_number`, `f470_number`,
+`funding_year`, `f470_status`, `allowable_contract_date`, `certified_datetime`,
+`created_datetime`, `last_modified_datetime`), the applicant (`ben`,
+`billed_entity_name`, `applicant_type`, `organization_type`,
+`billed_entity_state`, `number_of_eligible_entities`) and the service
+description (`category_one_description`, `category_two_description`,
+`rfp_identifier`, `statewide_state`). Contact and authorised-person blocks are
+declared but flagged in the docstring as personal data.
+
+Convenience methods `for_ben`, `for_year` and `for_ben_year`, matching the
+existing dataset classes.
+
+**Two traps the docstring must record:**
+
+- `f470_number` is a Socrata `url` column, so it deserialises as a nested
+  object, not a string. Reading it as text yields a dict.
+- The sibling `jt8s-3q52` carries `consulting_firm_data` as a composite string,
+  `{e2e Exchange, LLC|16043595|315-422-7608|erate@erateexchange.com}`, so
+  filtering it by consultant registration number silently returns nothing. This
+  is the same trap `gfac-g858`'s `crn_data` had. `jp7a-89nd` has no consultant
+  column at all, which is cleaner: join through `Consultants` (`x5px-esft`)
+  instead.
+
+Also note the applicant-key inconsistency this adds to: `Form470`, `Form471` and
+`FRNLineItems` use `ben`, while `RecipientCommitments` and `jt8s-3q52` use
+`billed_entity_number`. The README section on column naming gains `Form470`.
+
 ### `Form471` post-commitment fields
 
 Add the nine post-commitment columns that arrived in `qdmp-ygft` when
@@ -485,14 +529,22 @@ the existing `client.get(Form471.dataset_id, query=q)`.
 
 ### Documentation
 
-README gains the `Disbursements` row in the dataset table, a short section on
-`canonical_frn_rows` explaining the duplicate-row trap, and the dataset-class
-call form. CHANGELOG gains a 0.2.0 entry.
+README gains `Disbursements` and `Form470` rows in the dataset table, `Form470`
+in the existing column-naming section, a short section on `canonical_frn_rows`
+explaining the duplicate-row trap, the dataset-class call form, and the
+once-daily polling note. CHANGELOG gains a 0.2.0 entry.
+
+The dataset table also gains a column distinguishing the grain of each dataset
+(application, FRN, line item, recipient, entity, invoice line), because the
+recurring failure across this portfolio is querying the right dataset at the
+wrong grain.
 
 ### Acceptance
 
-- `from usac_data import escape_soql_literal, canonical_frn_rows, Disbursements`
-  works.
+- `from usac_data import escape_soql_literal, canonical_frn_rows, Disbursements,
+  Form470` works.
+- `Form470.for_ben_year(143174, 2025)` returns the Canceled FY2025 filing
+  verified during design.
 - `pytest -m live` covers `Disbursements` through the same drift check as every
   other dataset.
 - `paginate()` and `list(iter_paginate())` return identical results for the same
@@ -540,9 +592,12 @@ These are not part of this work but become possible once it lands:
 - **erate-filing-assistant:** two production bugs recorded in the memory graph
   under `usac-data--dataset-coverage-gap`, both still unfixed, both now
   addressable using the 0.1.5 dataset definitions.
-- **Ten uncovered E-Rate datasets.** The Form 470 family, the Form 471 sibling
-  tables and Service Provider Information. The Form 470 family is the
-  interesting one: erate-shepherd's onboarding checklist has a `form_470` step
-  that is currently derived and manual, and observing `jt8s-3q52` or
-  `jp7a-89nd` would turn it into the same observed-not-entered mechanism the
-  rest of that product runs on. Needs its own design conversation.
+- **erate-shepherd's `form_470` onboarding step.** Currently derived and manual.
+  Once `Form470` ships it can become observed, like the `epc_association` step:
+  a certified filing for the client's BEN and funding year confirms the step
+  without a consultant ticking anything. That is a shepherd change, not a
+  usac-data one, but it is the reason `Form470` is in scope.
+- **Eight still-uncovered E-Rate datasets.** The rest of the Form 470 family
+  (`jt8s-3q52`, `363f-22uh`, `g55z-erud`, `39tn-hjzv`), the Form 471 sibling
+  tables (`9s6i-myen`, `ym44-rnhq`, `upfy-khtr`, `tuem-agyq`) and `xcy2-bdid`
+  Service Provider Information.
