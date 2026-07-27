@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from usac_data.query import SoQLBuilder
+from usac_data.query import _AGGREGATE_FUNCTIONS, SoQLBuilder
 
 
 class TestSoQLBuilder:
@@ -169,7 +169,7 @@ class TestSoQLBuilder:
         with pytest.raises(ValueError, match="Invalid SoQL field name"):
             builder.group_by(bad)
 
-    # The separator before the sort direction is a literal space, [ ]+. \s would
+    # The separator before the sort direction is a literal space, " +". \s would
     # admit a non-breaking space (it is Unicode-aware without re.ASCII) and, even
     # under re.ASCII, would still admit \n, \r, \t, \v and \f.
     def test_order_by_rejects_non_ascii_whitespace(self) -> None:
@@ -193,7 +193,7 @@ class TestSoQLBuilder:
             builder.select(f"count(*){sep}as{sep}x")
 
     # The two separator positions are pinned independently. A failure in the
-    # first one masks the second, so a revert of just "as[ ]+" would otherwise
+    # first one masks the second, so a revert of just "as +" would otherwise
     # slip past the suite.
     @pytest.mark.parametrize("sep", ["\n", "\r", "\t", "\v", "\f"])
     def test_select_rejects_control_whitespace_before_as(self, sep: str) -> None:
@@ -218,14 +218,106 @@ class TestSoQLBuilder:
         with pytest.raises(ValueError, match="Invalid SoQL field name"):
             builder.group_by("name\n")
 
+    def test_order_by_rejects_trailing_newline(self) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL order"):
+            builder.order_by("name\n")
+
     def test_select_aggregate(self) -> None:
         params = SoQLBuilder().select("count(*) as count").to_params()
         assert params["$select"] == "count(*) as count"
+
+    def test_select_aggregate_over_column(self) -> None:
+        params = SoQLBuilder().select("sum(total_authorized) as total").to_params()
+        assert params["$select"] == "sum(total_authorized) as total"
 
     def test_invalid_select(self) -> None:
         builder = SoQLBuilder()
         with pytest.raises(ValueError, match="Invalid SoQL select"):
             builder.select("1=1; DROP TABLE")
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "sum(1) OR 1=1 --(x)",  # trailing clause smuggled after the call
+            "a(x) as y, evil(z)",   # second expression smuggled after an alias
+            "a(b),c(d)",            # comma-separated sub-expressions
+            "evil(x)",              # function outside the allowlist
+            "sum(a + b)",           # arbitrary expression as the argument
+            "sum(a, b)",            # multiple arguments
+            "count(*) as count; --",
+            "sum((select x))",
+            "sum(count(a))",        # nested call
+            "sum()",                # empty argument, accepted before
+            "count()",              # empty argument, accepted before
+            "date_trunc_y(d)",      # real SoQL, but not an aggregate
+            "upper(name)",          # real SoQL, but not an aggregate
+            "entity_name as name",  # alias is aggregate-only
+        ],
+    )
+    def test_select_rejects_smuggled_expressions(self, expression: str) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL select"):
+            builder.select(expression)
+
+    @pytest.mark.parametrize(
+        "expression",
+        ["ben\n", "count(*) as count\n", "ben\nevil", "sum(a)\n"],
+    )
+    def test_select_rejects_newlines(self, expression: str) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL select"):
+            builder.select(expression)
+
+    # count(*) is the only star form SoQL accepts; the rest take a column.
+    def test_select_rejects_star_for_non_count_aggregates(self) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL select"):
+            builder.select("sum(*)")
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "count(*)",
+            "count(*) as n",
+            "count(ben)",
+            "count_distinct(ben) as distinct_bens",
+            "median(cost)",
+            "stddev_pop(cost) as sd",
+            "MAX(Cost) AS Highest",
+        ],
+    )
+    def test_select_accepts_allowlisted_aggregates(self, expression: str) -> None:
+        params = SoQLBuilder().select(expression).to_params()
+        assert params["$select"] == expression
+
+    # Pinned so that widening $select is a deliberate two-file edit rather than
+    # a one-line append to the tuple.
+    def test_aggregate_allowlist_is_pinned(self) -> None:
+        assert set(_AGGREGATE_FUNCTIONS) == {
+            "count",
+            "count_distinct",
+            "sum",
+            "avg",
+            "min",
+            "max",
+            "median",
+            "stddev_pop",
+            "stddev_samp",
+        }
+
+    def test_select_raw_bypasses_validation(self) -> None:
+        params = SoQLBuilder().select_raw("date_trunc_ym(funding_date) as month").to_params()
+        assert params["$select"] == "date_trunc_ym(funding_date) as month"
+
+    def test_select_raw_combines_with_select(self) -> None:
+        params = (
+            SoQLBuilder()
+            .select("ben")
+            .select_raw("date_trunc_y(funding_date) as yr")
+            .to_params()
+        )
+        assert params["$select"] == "ben,date_trunc_y(funding_date) as yr"
 
     def test_copy(self) -> None:
         original = SoQLBuilder().where(year=2024)

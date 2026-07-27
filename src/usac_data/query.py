@@ -14,13 +14,17 @@ from typing import Any
 # SIGN and U+017F LATIN SMALL LETTER LONG S (both case-fold onto ASCII
 # letters), and \s matched U+00A0 and U+2028 as the separator before ASC/DESC.
 #
-# The separator before ASC/DESC and around AS is a literal space, [ ]+, not \s+.
+# The separator before ASC/DESC and around AS is a literal space, " +", not \s+.
 # Even under re.ASCII, \s admits \n, \r, \t, \v and \f, so "name\nDESC" and
 # "count(*)\tas\tx" would pass. Nothing downstream splits on those (httpx
 # percent-encodes query parameters), but tolerating control characters while
 # rejecting U+00A0 is an inconsistency not worth carrying in a guard pattern.
-# This constrains the separator only: _SELECT_RE's aggregate branch still
-# accepts an unvalidated \(.*\) body, so "count(a\tb)" is a separate hole.
+# The separator is the only place any of the three patterns admits whitespace:
+# with the $select allowlist below, every other position is \w or a literal.
+#
+# That lone space is significant and quantified, not formatting. It is spelled
+# bare rather than as [ ] because Sonar's S6397 flags a single-character class;
+# none of these patterns use re.VERBOSE, so the space is not skipped.
 #
 # \Z rather than $, because $ also matches just before a trailing newline, so
 # "name\n" would otherwise pass as a field name.
@@ -30,11 +34,41 @@ from typing import Any
 # Uppercase input still matches, so tests cover that explicitly.
 _FIELD_RE = re.compile(r"^[a-zA-Z_]\w*\Z", re.ASCII)  # no IGNORECASE: spell both cases
 _ORDER_RE = re.compile(
-    r"^(:id|[a-z_]\w*)([ ]+(asc|desc))?\Z", re.IGNORECASE | re.ASCII,
+    r"^(:id|[a-z_]\w*)( +(asc|desc))?\Z", re.IGNORECASE | re.ASCII,
 )
+# The aggregate functions SoQL documents. $select is an allowlist, not a shape
+# check: a call to anything not named here is rejected rather than forwarded.
+#
+# Ordered longest-first so alternation does not depend on backtracking to reach
+# "count_distinct" after "count" has already matched its prefix.
+_AGGREGATE_FUNCTIONS = (
+    "count_distinct",
+    "stddev_samp",
+    "stddev_pop",
+    "median",
+    "count",
+    "sum",
+    "avg",
+    "min",
+    "max",
+)
+
+# The aggregate branch used to be [a-z_]+\(.*\), where .* spans everything
+# between the first "(" and the last ")". That accepted "sum(1) OR 1=1 --(x)",
+# "a(x) as y, evil(z)" and "a(b),c(d)" — arbitrary sub-expressions, casts and
+# extra column references, all reaching $select intact. The argument is now a
+# single validated column (or the bare "*", which only count() takes).
+#
+# Multi-expression selects are expressed through the varargs signature —
+# select("sum(a) as x", "sum(b) as y") — not by embedding commas in one string.
 _SELECT_RE = re.compile(
-    r"^[a-z_]\w*\Z"                             # simple field
-    r"|^[a-z_]+\(.*\)([ ]+as[ ]+\w+)?\Z",       # aggregate expression
+    r"^(?:"
+    r"[a-z_]\w*"                                     # simple field
+    r"|(?:count\(\*\)"                               # count(*)
+    r"|(?:" + "|".join(_AGGREGATE_FUNCTIONS) + r")"  # allowlisted aggregate
+    r"\([a-z_]\w*\))"                                # over a single column
+    r"(?: +as +[a-z_]\w*)?"                          # optional alias
+    r")\Z",
     re.IGNORECASE | re.ASCII,
 )
 
@@ -103,11 +137,42 @@ class SoQLBuilder:
         return clone
 
     def select(self, *fields: str) -> SoQLBuilder:
-        """Set $select fields."""
+        """Set $select fields.
+
+        Each argument must be a single column name, or one aggregate call over
+        a single column with an optional alias::
+
+            select("entity_name", "frn")
+            select("count(*) as count")
+            select("sum(total_authorized) as total", "max(cost) as peak")
+
+        The permitted aggregates are ``count``, ``count_distinct``, ``sum``,
+        ``avg``, ``min``, ``max``, ``median``, ``stddev_pop`` and
+        ``stddev_samp``. ``*`` is accepted only as ``count(*)``. Only the
+        aggregate form takes an alias: a bare column name may not carry one.
+
+        Anything else raises ``ValueError``. Pass multiple expressions as
+        separate arguments; a single string holding a comma-separated list is
+        not accepted. For SoQL this does not model — non-aggregate functions
+        such as ``date_trunc_y()``, casts or arithmetic — use
+        :meth:`select_raw`.
+        """
         for f in fields:
             if not _SELECT_RE.match(f):
                 raise ValueError(f"Invalid SoQL select expression: {f!r}")
         self._select.extend(fields)
+        return self
+
+    def select_raw(self, expression: str) -> SoQLBuilder:
+        """Add a raw SoQL $select expression, bypassing validation.
+
+        The escape hatch for SoQL that :meth:`select` does not model, such as
+        ``date_trunc_ym(funding_date) as month`` or a cast.
+
+        Warning: ``expression`` is interpolated directly into the query with
+        no escaping. Never pass unsanitized user input to this method.
+        """
+        self._select.append(expression)
         return self
 
     def where(self, raw: str | None = None, **kwargs: Any) -> SoQLBuilder:
