@@ -166,10 +166,10 @@ with USACClient() as client:
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest
-ruff check .
-mypy src/
+uv sync --all-extras
+uv run pytest
+uv run ruff check .
+uv run mypy src/
 ```
 
 ## License

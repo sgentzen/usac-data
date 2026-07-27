@@ -62,6 +62,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `USACRetryError` without ever calling USAC. It now makes one attempt and
     returns the rows if that attempt succeeds.
 
+- Development and CI now use [uv](https://docs.astral.sh/uv/). `uv.lock` is
+  committed and CI installs from it with `uv sync --locked`, so every job runs
+  the exact versions recorded there instead of re-resolving. Contributors run
+  `uv sync --all-extras`; regenerate the lock with `uv lock` after changing
+  dependencies. Release builds use `uv build`, and both workflows now pin
+  third-party actions to full commit SHAs and grant permissions per job.
+
+  Dev tooling floors moved up accordingly: `pytest>=9.0`, `pytest-asyncio>=1.3`,
+  `pytest-httpx>=0.35`, `ruff>=0.16` and `mypy>=2.0`. These are dev-only extras
+  and do not constrain consumers. The runtime floors are unchanged, and the
+  build backend is now bounded at `hatchling>=1.27,<2`.
+
+### Security
+
+- The SoQL identifier validators in `query.py` are now ASCII-anchored
+  (`re.ASCII`), closing a Unicode case-folding bypass. `\w` and `\s` are
+  Unicode-aware by default, so under `re.IGNORECASE` the old patterns accepted
+  characters that case-fold onto ASCII letters, including U+212A KELVIN SIGN
+  and U+017F LATIN SMALL LETTER LONG S, as leading characters of a field name
+  or order clause, and accepted non-ASCII whitespace such as U+00A0 as the
+  separator before `ASC`/`DESC`. The patterns also anchor with `\Z` rather than
+  `$`, which matched before a trailing newline and let `"name\n"` pass as a
+  field name.
+
+  No accepted ASCII input changed, so this is a narrowing only. Field names
+  containing non-ASCII characters are now rejected, which no USAC dataset uses.
+
 ## [0.1.6] - 2026-07-25
 
 First release published to PyPI. Versions 0.1.0–0.1.5 exist only as git tags.

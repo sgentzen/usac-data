@@ -4,12 +4,22 @@ Thanks for your interest in contributing! Here's how to get started.
 
 ## Setup
 
+This project uses [uv](https://docs.astral.sh/uv/) to manage the development
+environment. `uv sync` creates `.venv` and installs the exact versions pinned in
+`uv.lock`, which is the same set CI runs against.
+
 ```bash
 git clone https://github.com/sgentzen/usac-data.git
 cd usac-data
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install -e ".[dev]"
+uv sync --all-extras
+```
+
+If you change anything under `[project.dependencies]` or
+`[project.optional-dependencies]`, regenerate the lock and commit it alongside
+the change:
+
+```bash
+uv lock
 ```
 
 ## Development workflow
@@ -19,10 +29,10 @@ pip install -e ".[dev]"
 3. Run the checks:
 
 ```bash
-pytest                # tests
-ruff check .          # linting (src/ and tests/)
-ruff format .         # formatting
-mypy src/             # type checking
+uv run pytest         # tests
+uv run ruff check .   # linting (src/ and tests/)
+uv run ruff format .  # formatting
+uv run mypy src/      # type checking
 ```
 
 4. Open a pull request
