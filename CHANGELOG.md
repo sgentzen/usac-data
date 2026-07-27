@@ -86,8 +86,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `$`, which matched before a trailing newline and let `"name\n"` pass as a
   field name.
 
-  No accepted ASCII input changed, so this is a narrowing only. Field names
-  containing non-ASCII characters are now rejected, which no USAC dataset uses.
+  The separator before `ASC`/`DESC` in an `$order` clause, and the one around
+  the `AS` in a `$select` aggregate expression, is now a literal space rather
+  than `\s+`. `re.ASCII` narrows `\s` to ASCII whitespace but that still admits
+  `\n`, `\r`, `\t`, `\v` and `\f`, so `order_by("name\nDESC")` and
+  `select("count(*)\tas\tx")` were accepted while the U+00A0 equivalents were
+  rejected. Nothing downstream splits on those characters (httpx
+  percent-encodes query parameters), so this closes an inconsistency in the
+  guard rather than an exploitable hole.
+
+  This is a narrowing only. Field names containing non-ASCII characters are now
+  rejected, which no USAC dataset uses, as is ASCII control whitespace used as
+  an identifier separator. A single space, as in `"name DESC"` and
+  `"count(*) as n"`, is unaffected.
 
 ## [0.1.6] - 2026-07-25
 

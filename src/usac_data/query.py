@@ -8,11 +8,19 @@ from typing import Any
 # These three patterns are the guard between caller input and generated SoQL,
 # so every flag here is load-bearing:
 #
-# re.ASCII pins \w to [A-Za-z0-9_] and \s to ASCII whitespace. Without it both
-# are Unicode-aware, and the old Unicode-mode patterns really did leak: under
-# Unicode IGNORECASE, [a-zA-Z_] matched U+212A KELVIN SIGN and U+017F LATIN
-# SMALL LETTER LONG S (both case-fold onto ASCII letters), and \s matched
-# U+00A0 and U+2028 as the separator before ASC/DESC.
+# re.ASCII pins \w to [A-Za-z0-9_] and confines IGNORECASE case-folding to
+# ASCII. Without it both are Unicode-aware, and the old Unicode-mode patterns
+# really did leak: under Unicode IGNORECASE, [a-zA-Z_] matched U+212A KELVIN
+# SIGN and U+017F LATIN SMALL LETTER LONG S (both case-fold onto ASCII
+# letters), and \s matched U+00A0 and U+2028 as the separator before ASC/DESC.
+#
+# The separator before ASC/DESC and around AS is a literal space, [ ]+, not \s+.
+# Even under re.ASCII, \s admits \n, \r, \t, \v and \f, so "name\nDESC" and
+# "count(*)\tas\tx" would pass. Nothing downstream splits on those (httpx
+# percent-encodes query parameters), but tolerating control characters while
+# rejecting U+00A0 is an inconsistency not worth carrying in a guard pattern.
+# This constrains the separator only: _SELECT_RE's aggregate branch still
+# accepts an unvalidated \(.*\) body, so "count(a\tb)" is a separate hole.
 #
 # \Z rather than $, because $ also matches just before a trailing newline, so
 # "name\n" would otherwise pass as a field name.
@@ -22,11 +30,11 @@ from typing import Any
 # Uppercase input still matches, so tests cover that explicitly.
 _FIELD_RE = re.compile(r"^[a-zA-Z_]\w*\Z", re.ASCII)  # no IGNORECASE: spell both cases
 _ORDER_RE = re.compile(
-    r"^(:id|[a-z_]\w*)(\s+(asc|desc))?\Z", re.IGNORECASE | re.ASCII,
+    r"^(:id|[a-z_]\w*)([ ]+(asc|desc))?\Z", re.IGNORECASE | re.ASCII,
 )
 _SELECT_RE = re.compile(
-    r"^[a-z_]\w*\Z"                         # simple field
-    r"|^[a-z_]+\(.*\)(\s+as\s+\w+)?\Z",     # aggregate expression
+    r"^[a-z_]\w*\Z"                             # simple field
+    r"|^[a-z_]+\(.*\)([ ]+as[ ]+\w+)?\Z",       # aggregate expression
     re.IGNORECASE | re.ASCII,
 )
 

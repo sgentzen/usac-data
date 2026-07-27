@@ -169,12 +169,48 @@ class TestSoQLBuilder:
         with pytest.raises(ValueError, match="Invalid SoQL field name"):
             builder.group_by(bad)
 
-    # \s is Unicode-aware without re.ASCII, so a non-breaking space would
-    # otherwise serve as the separator before the sort direction.
+    # The separator before the sort direction is a literal space, [ ]+. \s would
+    # admit a non-breaking space (it is Unicode-aware without re.ASCII) and, even
+    # under re.ASCII, would still admit \n, \r, \t, \v and \f.
     def test_order_by_rejects_non_ascii_whitespace(self) -> None:
         builder = SoQLBuilder()
         with pytest.raises(ValueError, match="Invalid SoQL order"):
             builder.order_by("name DESC")
+
+    # ASCII control whitespace is the other half of the separator guard: re.ASCII
+    # narrows \s but does not exclude \n, \r, \t, \v or \f, so the patterns spell
+    # the separator as a literal space instead.
+    @pytest.mark.parametrize("sep", ["\n", "\r", "\t", "\v", "\f"])
+    def test_order_by_rejects_control_whitespace_separator(self, sep: str) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL order"):
+            builder.order_by(f"name{sep}DESC")
+
+    @pytest.mark.parametrize("sep", ["\n", "\r", "\t", "\v", "\f"])
+    def test_select_rejects_control_whitespace_around_as(self, sep: str) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL select"):
+            builder.select(f"count(*){sep}as{sep}x")
+
+    # The two separator positions are pinned independently. A failure in the
+    # first one masks the second, so a revert of just "as[ ]+" would otherwise
+    # slip past the suite.
+    @pytest.mark.parametrize("sep", ["\n", "\r", "\t", "\v", "\f"])
+    def test_select_rejects_control_whitespace_before_as(self, sep: str) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL select"):
+            builder.select(f"sum(a){sep}as b")
+
+    @pytest.mark.parametrize("sep", ["\n", "\r", "\t", "\v", "\f"])
+    def test_select_rejects_control_whitespace_after_as(self, sep: str) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL select"):
+            builder.select(f"sum(a) as{sep}b")
+
+    def test_select_rejects_non_ascii_whitespace_around_as(self) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL select"):
+            builder.select("count(*) as x")
 
     # "$" matches before a trailing newline; "\Z" does not.
     def test_field_rejects_trailing_newline(self) -> None:
