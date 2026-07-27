@@ -35,12 +35,14 @@ jobs:
         run: uv sync --locked --all-extras --python ${{ matrix.python-version }}
 
       # --no-sync: the step above already installed the locked set, so these
-      # run against it rather than re-resolving.
+      # run against it rather than re-resolving. --no-build is belt-and-braces:
+      # nothing installs under --no-sync, but if that flag is ever dropped this
+      # still keeps sdist build scripts from running on the runner.
       - name: Lint
-        run: uv run --no-sync ruff check .
+        run: uv run --no-sync --no-build ruff check .
 
       - name: Type check
-        run: uv run --no-sync mypy src/
+        run: uv run --no-sync --no-build mypy src/
 
       - name: Test
-        run: uv run --no-sync pytest
+        run: uv run --no-sync --no-build pytest

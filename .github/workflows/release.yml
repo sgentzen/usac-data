@@ -54,9 +54,11 @@ jobs:
       # with License-Expression/License-File. Older packaging rejects those
       # fields and twine check fails with InvalidDistribution even though the
       # distribution is valid. Both tools are pinned exactly so a release is
-      # never gated on whatever twine happens to publish that day.
+      # never gated on whatever twine happens to publish that day. --no-build
+      # keeps this ephemeral environment to wheels, so no sdist build script
+      # runs on the release runner.
       - name: Check package metadata
-        run: uv tool run --from "twine==6.2.0" --with "packaging==26.2" twine check dist/*
+        run: uv tool run --no-build --from "twine==6.2.0" --with "packaging==26.2" twine check dist/*
 
       - name: Upload distributions
         uses: actions/upload-artifact@v7
