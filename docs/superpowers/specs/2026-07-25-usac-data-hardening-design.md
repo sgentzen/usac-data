@@ -65,7 +65,7 @@ verification gaps, drift protection, and the whole consolidation track.
 - **A `gfac-g858` dataset class.** See the finding below: it no longer exists and
   its fields now live in `qdmp-ygft`.
 - **Classes for the remaining uncovered datasets.** PR 4 adds `Form470`
-  (`jp7a-89nd`) and `Disbursements` (`jpiu-tj8h`). The other eight, including
+  (`jp7a-89nd`) and `Disbursements` (`jpiu-tj8h`). The other ten, including
   the rest of the Form 470 family and the Form 471 sibling tables, stay a
   tracked follow-up.
 
@@ -158,11 +158,13 @@ Information)` scheme. The docstring dataset URLs still redirect correctly and
 need no change.
 
 **Uncovered E-Rate datasets.** The catalogue holds 74 assets, 32 of them
-tabular. Beyond `jpiu-tj8h`, usac-data covers none of the Form 470 family
-(`jt8s-3q52`, `jp7a-89nd`, `363f-22uh`, `g55z-erud`, `39tn-hjzv`), the Form 471
-sibling tables (`9s6i-myen` Basic Information, `ym44-rnhq` Connectivity,
-`upfy-khtr` Discount Calculations, `tuem-agyq` Recipients of Service), or
-`xcy2-bdid` Service Provider Information. All are live and updated daily.
+tabular and 18 of those E-Rate branded. usac-data covers six, leaving twelve.
+Beyond `jpiu-tj8h`, it covers none of the Form 470 family (`jt8s-3q52`,
+`jp7a-89nd`, `363f-22uh`, `g55z-erud`, `39tn-hjzv`), the Form 471 sibling tables
+(`9s6i-myen` Basic Information, `ym44-rnhq` Connectivity, `upfy-khtr` Discount
+Calculations, `tuem-agyq` Recipients of Service), `xcy2-bdid` Service Provider
+Information, or `hwzi-t5nj` Supplemental Information: Annexes. All are live and
+updated daily.
 
 The withdrawal is the strongest argument for drift protection in this list. A
 dataset the portfolio depended on disappeared roughly a day after being verified
@@ -468,15 +470,31 @@ shepherd uses a batch size of 80.
 and Related Information)". 70 columns, verified live on 2026-07-25.
 
 **Why this dataset and not `jt8s-3q52`.** Both describe Form 470 filings.
-`jp7a-89nd` is application-level, one row per Form 470, keyed by `ben` and
-`funding_year`. `jt8s-3q52` is line-level, one row per service request, so a
-single form yields many rows and any "did they file?" question needs a dedupe
-first. The consuming question is whether a client filed for a funding year, so
-application grain is correct.
+`jp7a-89nd` is application-level. `jt8s-3q52` is line-level, one row per service
+request, so a single form yields many rows and any "did they file?" question
+needs a dedupe first. The consuming question is whether a client filed for a
+funding year, so application grain is correct.
 
-Live check against BEN 143174 (a real erate-shepherd client) returned five rows
-spanning funding years 2018 to 2025 with `f470_status` values `Certified` and
-`Canceled`.
+**Correction, verified 2026-07-26.** Application grain is not one row per Form
+470, as this spec originally stated, and `(ben, funding_year)` is not a unique
+key. The grain is one row per form *version*: a filing modified after
+certification appears twice, as `form_version='Original'` and
+`form_version='Current'`, identical in every other field. The dataset holds
+283,990 rows for 249,759 distinct `application_number` values (249,761
+`Original`, 34,229 `Current`), so roughly one filing in seven has been revised
+and a naive row count overstates filings. An applicant can also file several
+distinct Form 470s in one funding year.
+
+Every filing has an `Original` row, so a `form_version='Original'` filter is
+what makes a row count mean "filings". `f470_status` never disagrees between
+the two versions of a filing, checked across the whole dataset, so status
+questions are safe either way. The class gains an `originals_only()` method and
+records this in its docstring.
+
+Live check against BEN 143174 (a real erate-shepherd client) returned nine rows
+across eight applications spanning funding years 2018 to 2025, with
+`f470_status` values `Certified` and `Canceled`. The earlier "five rows"
+observation predates the duplicate-version finding.
 
 Declared fields cover the filing lifecycle (`application_number`, `f470_number`,
 `funding_year`, `f470_status`, `allowable_contract_date`, `certified_datetime`,
@@ -617,7 +635,8 @@ These are not part of this work but become possible once it lands:
   a certified filing for the client's BEN and funding year confirms the step
   without a consultant ticking anything. That is a shepherd change, not a
   usac-data one, but it is the reason `Form470` is in scope.
-- **Eight still-uncovered E-Rate datasets.** The rest of the Form 470 family
+- **Ten still-uncovered E-Rate datasets.** The rest of the Form 470 family
   (`jt8s-3q52`, `363f-22uh`, `g55z-erud`, `39tn-hjzv`), the Form 471 sibling
-  tables (`9s6i-myen`, `ym44-rnhq`, `upfy-khtr`, `tuem-agyq`) and `xcy2-bdid`
-  Service Provider Information.
+  tables (`9s6i-myen`, `ym44-rnhq`, `upfy-khtr`, `tuem-agyq`), `xcy2-bdid`
+  Service Provider Information and `hwzi-t5nj` Supplemental Information:
+  Annexes.
