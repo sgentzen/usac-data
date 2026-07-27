@@ -244,6 +244,13 @@ Patch `time.sleep` and `asyncio.sleep` in the retry tests. Retry timing is
 already asserted through `_retry_wait` unit tests, so the integration tests need
 only prove the loop runs the right number of times.
 
+The `sleeps` fixture added alongside the tenacity migration already does this
+patching (and records the waits). The remaining work is to hand it to the older
+retry tests that still sleep for real: `test_retry_on_server_error`,
+`test_retry_on_429_rate_limit`, `test_raises_retry_error_after_exhaustion` and
+`test_retry_on_transport_error`. Note the fixture needs `tenacity>=8.3`, which
+is now the declared floor.
+
 **`pyproject.toml`**
 
 - Add `pytest-cov>=5` to the `dev` extra. It is currently used locally but

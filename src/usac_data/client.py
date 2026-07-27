@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import time
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Callable
+from typing import Any, TypedDict
 
 import httpx
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    RetryError,
+    Retrying,
+    retry_base,
+    retry_if_exception,
+    stop_after_attempt,
+)
+from tenacity.stop import stop_base
 
 from usac_data.exceptions import USACRetryError
 from usac_data.query import PARAM_LIMIT, PARAM_OFFSET, PARAM_ORDER, SoQLBuilder
@@ -22,6 +30,21 @@ DEFAULT_PAGE_SIZE = 10_000
 MAX_RETRIES = 3
 RETRY_BACKOFF = 1.0  # seconds, doubles each retry
 DEFAULT_TIMEOUT = 30.0
+
+
+class _RetrySettings(TypedDict):
+    """Keyword arguments accepted by both ``Retrying`` and ``AsyncRetrying``."""
+
+    stop: stop_base
+    retry: retry_base
+    wait: Callable[[RetryCallState], float]
+    before_sleep: Callable[[RetryCallState], None]
+
+
+def _attempt_exception(retry_state: RetryCallState) -> BaseException | None:
+    """The exception raised by the attempt that just failed, if there was one."""
+    outcome = retry_state.outcome
+    return outcome.exception() if outcome is not None else None
 
 
 class USACClient:
@@ -138,14 +161,19 @@ class USACClient:
         return params
 
     @staticmethod
-    def _is_retryable(exc: httpx.HTTPStatusError) -> bool:
-        """Return True if the HTTP error warrants a retry."""
-        return exc.response.status_code == 429 or exc.response.status_code >= 500
+    def _is_retryable(exc: BaseException) -> bool:
+        """Return True if the exception warrants a retry."""
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code == 429 or exc.response.status_code >= 500
+        return isinstance(exc, httpx.TransportError)
 
     @staticmethod
-    def _retry_wait(exc: httpx.HTTPStatusError, attempt: int) -> float:
-        """Compute wait time, respecting Retry-After for 429 responses."""
-        if exc.response.status_code == 429:
+    def _retry_wait(exc: BaseException | None, attempt: int) -> float:
+        """Compute wait time, respecting Retry-After for 429 responses.
+
+        Every other failure (5xx, transport errors) backs off exponentially.
+        """
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
             retry_after = exc.response.headers.get("Retry-After")
             if retry_after:
                 try:
@@ -155,44 +183,49 @@ class USACClient:
             return 30.0  # default for 429 without Retry-After
         return RETRY_BACKOFF * (2.0**attempt)
 
-    def _log_retry(
-        self,
-        exc: httpx.HTTPStatusError | httpx.TransportError,
-        attempt: int,
-        dataset_id: str,
-    ) -> float:
-        """Compute wait time and emit a retry warning. Caller must verify retryability first."""
-        wait = (
-            self._retry_wait(exc, attempt)
-            if isinstance(exc, httpx.HTTPStatusError)
-            else RETRY_BACKOFF * (2.0**attempt)
-        )
-        logger.warning(
-            "Retry %d/%d for %s (wait %.1fs): %s",
-            attempt + 1,
-            self.max_retries,
-            dataset_id,
-            wait,
-            exc,
-        )
-        return wait
+    def _retry_settings(self, dataset_id: str) -> _RetrySettings:
+        """Tenacity configuration shared by the sync and async fetch paths."""
+
+        def wait(retry_state: RetryCallState) -> float:
+            return self._retry_wait(
+                _attempt_exception(retry_state), retry_state.attempt_number - 1
+            )
+
+        def log_retry(retry_state: RetryCallState) -> None:
+            # upcoming_sleep is the wait tenacity is about to take, so the
+            # logged figure is always the one actually slept.
+            logger.warning(
+                "Retry %d/%d for %s (wait %.1fs): %s",
+                retry_state.attempt_number,
+                self.max_retries,
+                dataset_id,
+                retry_state.upcoming_sleep,
+                _attempt_exception(retry_state),
+            )
+
+        return {
+            "stop": stop_after_attempt(self.max_retries),
+            "retry": retry_if_exception(self._is_retryable),
+            "wait": wait,
+            "before_sleep": log_retry,
+        }
 
     def _fetch_sync(
         self,
         dataset_id: str,
         params: dict[str, str],
     ) -> list[dict[str, Any]]:
-        last_exc: Exception | None = None
-        for attempt in range(self.max_retries):
-            try:
-                resp = self._get_sync_client().get(f"/{dataset_id}.json", params=params)
-                resp.raise_for_status()
-                return resp.json()  # type: ignore[no-any-return]
-            except (httpx.HTTPStatusError, httpx.TransportError) as exc:
-                last_exc = exc
-                if isinstance(exc, httpx.HTTPStatusError) and not self._is_retryable(exc):
-                    raise
-                time.sleep(self._log_retry(exc, attempt, dataset_id))
+        def attempt() -> list[dict[str, Any]]:
+            resp = self._get_sync_client().get(f"/{dataset_id}.json", params=params)
+            resp.raise_for_status()
+            return resp.json()  # type: ignore[no-any-return]
+
+        try:
+            return Retrying(**self._retry_settings(dataset_id))(attempt)
+        except RetryError as exc:
+            last_exc = exc.last_attempt.exception()
+        # Raised outside the handler so tenacity's RetryError stays out of the
+        # traceback the caller sees.
         raise USACRetryError(dataset_id, self.max_retries) from last_exc
 
     async def _fetch_async(
@@ -200,17 +233,15 @@ class USACClient:
         dataset_id: str,
         params: dict[str, str],
     ) -> list[dict[str, Any]]:
-        last_exc: Exception | None = None
-        for attempt in range(self.max_retries):
-            try:
-                resp = await self._get_async_client().get(f"/{dataset_id}.json", params=params)
-                resp.raise_for_status()
-                return resp.json()  # type: ignore[no-any-return]
-            except (httpx.HTTPStatusError, httpx.TransportError) as exc:
-                last_exc = exc
-                if isinstance(exc, httpx.HTTPStatusError) and not self._is_retryable(exc):
-                    raise
-                await asyncio.sleep(self._log_retry(exc, attempt, dataset_id))
+        async def attempt() -> list[dict[str, Any]]:
+            resp = await self._get_async_client().get(f"/{dataset_id}.json", params=params)
+            resp.raise_for_status()
+            return resp.json()  # type: ignore[no-any-return]
+
+        try:
+            return await AsyncRetrying(**self._retry_settings(dataset_id))(attempt)
+        except RetryError as exc:
+            last_exc = exc.last_attempt.exception()
         raise USACRetryError(dataset_id, self.max_retries) from last_exc
 
     # -- Public API --
