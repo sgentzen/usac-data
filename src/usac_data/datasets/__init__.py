@@ -29,7 +29,9 @@ class DatasetMeta:
 from usac_data.datasets.c2_budget import C2BudgetTool  # noqa: E402
 from usac_data.datasets.commitments import RecipientCommitments  # noqa: E402
 from usac_data.datasets.consultants import Consultants  # noqa: E402
+from usac_data.datasets.disbursements import Disbursements  # noqa: E402
 from usac_data.datasets.entity_info import EntityInfo  # noqa: E402
+from usac_data.datasets.form470 import Form470  # noqa: E402
 from usac_data.datasets.form471 import Form471  # noqa: E402
 from usac_data.datasets.frn_line_items import FRNLineItems  # noqa: E402
 
@@ -37,8 +39,10 @@ __all__ = [
     "C2BudgetTool",
     "Consultants",
     "DatasetMeta",
+    "Disbursements",
     "EntityInfo",
     "FRNLineItems",
+    "Form470",
     "Form471",
     "RecipientCommitments",
 ]
