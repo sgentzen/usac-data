@@ -7,7 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Form470` (`jp7a-89nd`), covering E-Rate competitive bidding filings at
+  application grain, with `for_ben()`, `for_year()`, `for_ben_year()` and
+  `originals_only()`. Chosen over the line-level sibling `jt8s-3q52` because
+  the consuming question is whether an applicant filed for a funding year, not
+  what services they requested.
+
+  The class docstring records three traps found against live data: rows are one
+  per form **version**, not per filing, so a form revised after certification
+  appears as both `Original` and `Current` and a naive row count overstates
+  filings (283,990 rows for 249,759 distinct applications as at 2026-07-26);
+  `f470_number` is a Socrata `url` column and deserialises as a nested object,
+  not a string; and there is no consultant column, so consultant questions must
+  join through `Consultants` rather than filtering the sibling dataset's
+  composite `consulting_firm_data` string, which silently matches nothing.
+
+- `Disbursements` (`jpiu-tj8h`), covering invoices and authorized disbursements
+  (FCC Forms 472 and 474), with a batching `for_frns()` helper. Records that
+  rows are line-level and must be aggregated by `funding_request_number`, that
+  `inv_line_item_status` is uniformly `SENT TO USAC` and carries no signal so
+  `approved_inv_line_amt` is the field that matters, and that
+  `consultant_registration_number` is frequently null so consultant-keyed
+  queries under-report.
+
+- A grain column in the README dataset table, and README sections on the
+  Form 470 version duplication and on querying disbursements by FRN.
+
 ### Changed
+
+- Dataset coverage is now 8 of the 18 E-Rate datasets USAC publishes. The
+  remaining ten are tracked in the hardening spec.
 
 - `USACClient` now drives its retries with [tenacity](https://tenacity.readthedocs.io/)
   instead of a hand-rolled loop duplicated across `_fetch_sync` and
