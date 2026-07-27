@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-07-26
+
+Two new datasets, and one breaking change: `SoQLBuilder.select()` now validates
+against a function allowlist rather than an expression shape, so non-aggregate
+SoQL functions such as `date_trunc_y()` no longer pass. Use the new
+`select_raw()` for those. Details under Security below.
 
 ### Added
 
