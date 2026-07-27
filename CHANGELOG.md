@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `SoQLBuilder.select_raw()`, the escape hatch for `$select` expressions that
+  `select()` deliberately no longer models — non-aggregate SoQL functions such
+  as `date_trunc_ym(funding_date) as month`, casts, and arithmetic. It appends
+  the string unvalidated, and carries the same "never pass unsanitized user
+  input" warning as `where_raw()` and `having()`. This is the migration path
+  for the `select()` narrowing recorded under Security.
+
 - `Form470` (`jp7a-89nd`), covering E-Rate competitive bidding filings at
   application grain, with `for_ben()`, `for_year()`, `for_ben_year()` and
   `originals_only()`. Chosen over the line-level sibling `jt8s-3q52` because
@@ -88,6 +95,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   No accepted ASCII input changed, so this is a narrowing only. Field names
   containing non-ASCII characters are now rejected, which no USAC dataset uses.
+
+- **Breaking:** `SoQLBuilder.select()` now validates aggregate expressions
+  against a function allowlist instead of matching their shape. The previous
+  pattern was `[a-z_]+\(.*\)(\s+as\s+\w+)?`, where `.*` spanned everything
+  between the first `(` and the last `)`, so `$select` was a shape check rather
+  than an allowlist. These all reached the API intact:
+
+  - `sum(1) OR 1=1 --(x)` — a trailing clause smuggled into the argument
+  - `a(x) as y, evil(z)` — a second expression, likewise smuggled inside the
+    parentheses, since the greedy `.*` ran to the final `)` and the alias group
+    matched nothing at all
+  - `a(b),c(d)` — comma-separated sub-expressions
+
+  An argument must now be a single column name, or a call to one of `count`,
+  `count_distinct`, `sum`, `avg`, `min`, `max`, `median`, `stddev_pop` or
+  `stddev_samp` over a single column, with an optional alias. `*` is accepted
+  only as `count(*)`. Casts, arithmetic, multiple arguments and nested calls
+  are rejected.
+
+  `$select` was always a narrower blast radius than `$where` — you cannot pivot
+  to another dataset through it — but arbitrary sub-expressions and extra
+  column references were being forwarded unchecked.
+
+  What this breaks, in the order you are likely to hit it:
+
+  1. **Any non-aggregate SoQL function.** The old `[a-z_]+\(` matched any
+     function name, so `date_trunc_y(funding_date)`, `date_trunc_ym()`,
+     `date_extract_y()`, `upper()`, `lower()` and `convex_hull()` were all
+     accepted. None of them are aggregates, so none are on the allowlist.
+     `date_trunc_y()` paired with `group_by()` is the standard SoQL
+     time-series idiom, so this is the most likely break in practice.
+  2. **A single string holding several expressions**, such as
+     `select("sum(a) as x, sum(b) as y")`.
+  3. **An empty argument.** `sum()` and `count()` were accepted; a column is
+     now required, and `*` only after `count`.
+
+  Migration. For (2), pass the expressions as separate arguments —
+  `select("sum(a) as x", "sum(b) as y")` — which the varargs signature has
+  always supported and which `to_params()` joins with commas. For (1), use the
+  new `select_raw()` below.
+
+  An alias on a bare column, `select("entity_name as name")`, is still
+  rejected, as it was before this change — a string without parentheses never
+  reached the aggregate branch that carries the alias group. Use `select_raw()`
+  if you need it.
+
+  Comma-separated lists in a single string were only ever accepted by accident:
+  `select("a,b")` already raised before this change, because a string without
+  parentheses fell through to the bare-column branch. Only lists that happened
+  to contain a call got through, so the behaviour was inconsistent rather than
+  intended, and it is not being reinstated.
+
+  Nothing in this package relied on the old latitude. The only aggregate
+  expression it builds is `count(*) as count`, in `USACClient.count()` and
+  `acount()`; no dataset helper class calls `select()` at all.
 
 ## [0.1.6] - 2026-07-25
 

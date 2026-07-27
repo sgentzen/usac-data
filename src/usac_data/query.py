@@ -24,9 +24,39 @@ _FIELD_RE = re.compile(r"^[a-zA-Z_]\w*\Z", re.ASCII)  # no IGNORECASE: spell bot
 _ORDER_RE = re.compile(
     r"^(:id|[a-z_]\w*)(\s+(asc|desc))?\Z", re.IGNORECASE | re.ASCII,
 )
+# The aggregate functions SoQL documents. $select is an allowlist, not a shape
+# check: a call to anything not named here is rejected rather than forwarded.
+#
+# Ordered longest-first so alternation does not depend on backtracking to reach
+# "count_distinct" after "count" has already matched its prefix.
+_AGGREGATE_FUNCTIONS = (
+    "count_distinct",
+    "stddev_samp",
+    "stddev_pop",
+    "median",
+    "count",
+    "sum",
+    "avg",
+    "min",
+    "max",
+)
+
+# The aggregate branch used to be [a-z_]+\(.*\), where .* spans everything
+# between the first "(" and the last ")". That accepted "sum(1) OR 1=1 --(x)",
+# "a(x) as y, evil(z)" and "a(b),c(d)" — arbitrary sub-expressions, casts and
+# extra column references, all reaching $select intact. The argument is now a
+# single validated column (or the bare "*", which only count() takes).
+#
+# Multi-expression selects are expressed through the varargs signature —
+# select("sum(a) as x", "sum(b) as y") — not by embedding commas in one string.
 _SELECT_RE = re.compile(
-    r"^[a-z_]\w*\Z"                         # simple field
-    r"|^[a-z_]+\(.*\)(\s+as\s+\w+)?\Z",     # aggregate expression
+    r"^(?:"
+    r"[a-z_]\w*"                                     # simple field
+    r"|(?:count\(\*\)"                               # count(*)
+    r"|(?:" + "|".join(_AGGREGATE_FUNCTIONS) + r")"  # allowlisted aggregate
+    r"\([a-z_]\w*\))"                                # over a single column
+    r"(?:\s+as\s+[a-z_]\w*)?"                        # optional alias
+    r")\Z",
     re.IGNORECASE | re.ASCII,
 )
 
@@ -95,11 +125,42 @@ class SoQLBuilder:
         return clone
 
     def select(self, *fields: str) -> SoQLBuilder:
-        """Set $select fields."""
+        """Set $select fields.
+
+        Each argument must be a single column name, or one aggregate call over
+        a single column with an optional alias::
+
+            select("entity_name", "frn")
+            select("count(*) as count")
+            select("sum(total_authorized) as total", "max(cost) as peak")
+
+        The permitted aggregates are ``count``, ``count_distinct``, ``sum``,
+        ``avg``, ``min``, ``max``, ``median``, ``stddev_pop`` and
+        ``stddev_samp``. ``*`` is accepted only as ``count(*)``. Only the
+        aggregate form takes an alias: a bare column name may not carry one.
+
+        Anything else raises ``ValueError``. Pass multiple expressions as
+        separate arguments; a single string holding a comma-separated list is
+        not accepted. For SoQL this does not model — non-aggregate functions
+        such as ``date_trunc_y()``, casts or arithmetic — use
+        :meth:`select_raw`.
+        """
         for f in fields:
             if not _SELECT_RE.match(f):
                 raise ValueError(f"Invalid SoQL select expression: {f!r}")
         self._select.extend(fields)
+        return self
+
+    def select_raw(self, expression: str) -> SoQLBuilder:
+        """Add a raw SoQL $select expression, bypassing validation.
+
+        The escape hatch for SoQL that :meth:`select` does not model, such as
+        ``date_trunc_ym(funding_date) as month`` or a cast.
+
+        Warning: ``expression`` is interpolated directly into the query with
+        no escaping. Never pass unsanitized user input to this method.
+        """
+        self._select.append(expression)
         return self
 
     def where(self, raw: str | None = None, **kwargs: Any) -> SoQLBuilder:
