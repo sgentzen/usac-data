@@ -71,9 +71,8 @@ write`, so the OIDC credential is not exposed to the build.
 ## Verifying a build locally
 
 ```bash
-python -m pip install --upgrade build twine "packaging>=24.2"
-python -m build
-python -m twine check dist/*
+uv build
+uv tool run --from "twine==6.2.0" --with "packaging==26.2" twine check dist/*
 ```
 
 `packaging>=24.2` matters: this project uses PEP 639 (`license = "Apache-2.0"`),

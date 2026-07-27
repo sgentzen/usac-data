@@ -106,40 +106,90 @@ class TestSoQLBuilder:
         assert params["$limit"] == "10"
 
     def test_invalid_field_in_where(self) -> None:
+        builder = SoQLBuilder()
         with pytest.raises(ValueError, match="Invalid SoQL field name"):
-            SoQLBuilder().where(**{"1=1) OR (1=1": "x"})
+            builder.where(**{"1=1) OR (1=1": "x"})
 
     def test_invalid_field_in_where_in(self) -> None:
+        builder = SoQLBuilder()
         with pytest.raises(ValueError, match="Invalid SoQL field name"):
-            SoQLBuilder().where_in("bad field!", [1])
+            builder.where_in("bad field!", [1])
 
     def test_invalid_field_in_where_between(self) -> None:
+        builder = SoQLBuilder()
         with pytest.raises(ValueError, match="Invalid SoQL field name"):
-            SoQLBuilder().where_between("bad;field", 1, 10)
+            builder.where_between("bad;field", 1, 10)
 
     def test_invalid_field_in_where_like(self) -> None:
+        builder = SoQLBuilder()
         with pytest.raises(ValueError, match="Invalid SoQL field name"):
-            SoQLBuilder().where_like("bad field", "%x%")
+            builder.where_like("bad field", "%x%")
 
     def test_invalid_field_in_order_by(self) -> None:
+        builder = SoQLBuilder()
         with pytest.raises(ValueError, match="Invalid SoQL order"):
-            SoQLBuilder().order_by("bad;field DESC")
+            builder.order_by("bad;field DESC")
 
     def test_invalid_field_in_group_by(self) -> None:
+        builder = SoQLBuilder()
         with pytest.raises(ValueError, match="Invalid SoQL field name"):
-            SoQLBuilder().group_by("bad field")
+            builder.group_by("bad field")
 
     def test_valid_order_with_direction(self) -> None:
         params = SoQLBuilder().order_by("name ASC", "year DESC").to_params()
         assert params["$order"] == "name ASC,year DESC"
+
+    # The order/select patterns spell their character classes lowercase-only and
+    # rely on re.IGNORECASE to accept uppercase. Dropping that flag would still
+    # leave the patterns looking correct, so these pin the behaviour down.
+    def test_order_by_accepts_uppercase_field(self) -> None:
+        params = SoQLBuilder().order_by("Name DESC").to_params()
+        assert params["$order"] == "Name DESC"
+
+    def test_select_accepts_uppercase_field(self) -> None:
+        params = SoQLBuilder().select("MyField").to_params()
+        assert params["$select"] == "MyField"
+
+    def test_where_accepts_uppercase_field(self) -> None:
+        params = SoQLBuilder().where(Funding_Year=2024).to_params()
+        assert params["$where"] == "Funding_Year='2024'"
+
+    # re.ASCII is what stops Unicode case-folding from smuggling a non-ASCII
+    # character past an identifier guard. U+212A and U+017F fold onto ASCII
+    # "k" and "s", so without re.ASCII they pass as leading characters.
+    @pytest.mark.parametrize("bad", ["Kelvin", "ſum", "café"])
+    def test_order_by_rejects_non_ascii(self, bad: str) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL order"):
+            builder.order_by(bad)
+
+    @pytest.mark.parametrize("bad", ["Kelvin", "ſum", "café"])
+    def test_field_rejects_non_ascii(self, bad: str) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL field name"):
+            builder.group_by(bad)
+
+    # \s is Unicode-aware without re.ASCII, so a non-breaking space would
+    # otherwise serve as the separator before the sort direction.
+    def test_order_by_rejects_non_ascii_whitespace(self) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL order"):
+            builder.order_by("name DESC")
+
+    # "$" matches before a trailing newline; "\Z" does not.
+    def test_field_rejects_trailing_newline(self) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL field name"):
+            builder.group_by("name\n")
 
     def test_select_aggregate(self) -> None:
         params = SoQLBuilder().select("count(*) as count").to_params()
         assert params["$select"] == "count(*) as count"
 
     def test_invalid_select(self) -> None:
+        builder = SoQLBuilder()
         with pytest.raises(ValueError, match="Invalid SoQL select"):
-            SoQLBuilder().select("1=1; DROP TABLE")
+            builder.select("1=1; DROP TABLE")
 
     def test_copy(self) -> None:
         original = SoQLBuilder().where(year=2024)

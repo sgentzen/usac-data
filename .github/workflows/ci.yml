@@ -6,9 +6,18 @@ on:
   pull_request:
     branches: [master]
 
+# Empty, so a job added later without its own `permissions:` block inherits
+# nothing rather than the repository default token scope. Each job grants
+# itself exactly what it needs.
+permissions: {}
+
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
@@ -16,19 +25,24 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
 
+      # --locked fails rather than silently re-resolving, so CI installs the
+      # exact versions recorded in uv.lock. Regenerate the lock with `uv lock`
+      # whenever pyproject.toml dependencies change.
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: uv sync --locked --all-extras --python ${{ matrix.python-version }}
 
+      # --no-sync: the step above already installed the locked set, so these
+      # run against it rather than re-resolving. --no-build is belt-and-braces:
+      # nothing installs under --no-sync, but if that flag is ever dropped this
+      # still keeps sdist build scripts from running on the runner.
       - name: Lint
-        run: ruff check .
+        run: uv run --no-sync --no-build ruff check .
 
       - name: Type check
-        run: mypy src/
+        run: uv run --no-sync --no-build mypy src/
 
       - name: Test
-        run: pytest
+        run: uv run --no-sync --no-build pytest

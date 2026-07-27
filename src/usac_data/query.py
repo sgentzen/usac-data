@@ -5,14 +5,29 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+# These three patterns are the guard between caller input and generated SoQL,
+# so every flag here is load-bearing:
+#
+# re.ASCII pins \w to [A-Za-z0-9_] and \s to ASCII whitespace. Without it both
+# are Unicode-aware, and the old Unicode-mode patterns really did leak: under
+# Unicode IGNORECASE, [a-zA-Z_] matched U+212A KELVIN SIGN and U+017F LATIN
+# SMALL LETTER LONG S (both case-fold onto ASCII letters), and \s matched
+# U+00A0 and U+2028 as the separator before ASC/DESC.
+#
+# \Z rather than $, because $ also matches just before a trailing newline, so
+# "name\n" would otherwise pass as a field name.
+#
+# The IGNORECASE patterns spell their classes lowercase-only: under IGNORECASE
+# the a-z and A-Z ranges are redundant, which is what Sonar's S5869 flags.
+# Uppercase input still matches, so tests cover that explicitly.
+_FIELD_RE = re.compile(r"^[a-zA-Z_]\w*\Z", re.ASCII)  # no IGNORECASE: spell both cases
 _ORDER_RE = re.compile(
-    r"^(:id|[a-zA-Z_][a-zA-Z0-9_]*)(\s+(ASC|DESC))?$", re.IGNORECASE,
+    r"^(:id|[a-z_]\w*)(\s+(asc|desc))?\Z", re.IGNORECASE | re.ASCII,
 )
 _SELECT_RE = re.compile(
-    r"^[a-zA-Z_][a-zA-Z0-9_]*$"           # simple field
-    r"|^[a-zA-Z_]+\(.*\)(\s+as\s+\w+)?$",  # aggregate expression
-    re.IGNORECASE,
+    r"^[a-z_]\w*\Z"                         # simple field
+    r"|^[a-z_]+\(.*\)(\s+as\s+\w+)?\Z",     # aggregate expression
+    re.IGNORECASE | re.ASCII,
 )
 
 # Socrata SODA API query parameter keys
