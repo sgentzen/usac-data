@@ -38,21 +38,35 @@ Until this is done, the workflow will run and fail at the publish step.
    - `pyproject.toml` → `[project] version`
    - `src/usac_data/__init__.py` → `__version__`
 
-2. Move the `[Unreleased]` section of `CHANGELOG.md` under the new version
-   heading with today's date.
-
-3. Merge that to `master` and confirm CI is green.
-
-4. Tag and push:
+2. Regenerate the lockfile:
 
    ```bash
-   git tag -a v0.1.6 -m "v0.1.6"
-   git push origin v0.1.6
+   uv lock
    ```
 
-5. Publish a GitHub Release for the tag. That starts the workflow.
+   `uv.lock` records the workspace member's own version, not just its
+   dependencies: there is a `[[package]] name = "usac-data"` entry with its own
+   `version` field. Bumping the two files above leaves that entry stale, and
+   CI's `uv sync --locked` then fails on the release commit itself. The result
+   should be a one-line diff with no dependency churn; if `uv lock` also moves
+   dependency pins, that is a separate change worth reviewing before it rides
+   along with the release.
 
-The tag may be written `v0.1.6` or `0.1.6`; the leading `v` is stripped before
+3. Move the `[Unreleased]` section of `CHANGELOG.md` under the new version
+   heading with today's date.
+
+4. Merge that to `master` and confirm CI is green.
+
+5. Tag and push:
+
+   ```bash
+   git tag -a v0.2.1 -m "v0.2.1"
+   git push origin v0.2.1
+   ```
+
+6. Publish a GitHub Release for the tag. That starts the workflow.
+
+The tag may be written `v0.2.1` or `0.2.1`; the leading `v` is stripped before
 comparison.
 
 ## What the workflow checks
