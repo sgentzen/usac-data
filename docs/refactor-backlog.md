@@ -33,13 +33,22 @@ The SoQL `$`-prefixed keys (`$limit`, `$offset`, `$order`, `$select`, `$where`, 
 
 ---
 
-## Task 3 — DRY the retry loop in `_fetch_sync` / `_fetch_async`
+## Task 3 — DRY the retry loop in `_fetch_sync` / `_fetch_async` — ✅ DONE
 
 **File:** `src/usac_data/client.py` (lines 139-199)
 
-`_fetch_sync` and `_fetch_async` duplicate a 30-line retry loop verbatim. The only real differences are the HTTP call (sync vs `await`) and the sleep. Extract a helper `_compute_retry_wait(exc, attempt) -> float` that absorbs the repeated ternary at lines 154-158 / 185-189, and factor the shared "warn + sleep" log line. The two fetch methods stay as thin wrappers — full unification requires an async bridge and isn't worth the complexity.
+~~`_fetch_sync` and `_fetch_async` duplicate a 30-line retry loop verbatim. The only real differences are the HTTP call (sync vs `await`) and the sleep. Extract a helper `_compute_retry_wait(exc, attempt) -> float` that absorbs the repeated ternary at lines 154-158 / 185-189, and factor the shared "warn + sleep" log line. The two fetch methods stay as thin wrappers — full unification requires an async bridge and isn't worth the complexity.~~
 
 **Acceptance:** Retry-after logic identical (429 with and without `Retry-After`, 5xx backoff, transport-error backoff). All existing retry tests pass.
+
+**Resolution:** Partly done in 0.1.x by extracting `_retry_wait()` / `_log_retry()`,
+then closed out by dropping the hand-rolled loop entirely in favour of
+[tenacity](https://tenacity.readthedocs.io/). The classification predicate
+(`_is_retryable`), the wait computation (`_retry_wait`) and the retry log line
+are now supplied once, from `_retry_settings()`, to both a `Retrying` and an
+`AsyncRetrying`; the two fetch methods are thin wrappers that translate
+tenacity's `RetryError` into `USACRetryError`. See the CHANGELOG for the single
+behavioural difference (no sleep after the final failed attempt).
 
 ---
 

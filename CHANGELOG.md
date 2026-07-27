@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `USACClient` now drives its retries with [tenacity](https://tenacity.readthedocs.io/)
+  instead of a hand-rolled loop duplicated across `_fetch_sync` and
+  `_fetch_async`. New runtime dependency: `tenacity>=8.3`.
+
+  The retry contract is unchanged: retry on 429 and 5xx plus transport errors,
+  raise immediately on any other 4xx, honour `Retry-After` on 429 (falling back
+  to 30s), exponential backoff of `RETRY_BACKOFF * 2 ** attempt` otherwise, and
+  raise `USACRetryError` chained to the last failure once `max_retries`
+  attempts are used up. The warning line logged before each wait keeps its
+  existing format.
+
+  Two behavioural differences, both on paths that were doing nothing useful:
+
+  - The old loop slept once more *after* the final failed attempt before giving
+    up, so a run with `max_retries=3` waited 1s, 2s and then a pointless 4s
+    before raising. Tenacity does not sleep when it has no attempt left, so
+    `USACRetryError` is now raised as soon as the last attempt fails. The final
+    "Retry 3/3" warning that accompanied that dead wait is gone with it.
+  - `max_retries=0` used to skip the request loop entirely and raise
+    `USACRetryError` without ever calling USAC. It now makes one attempt and
+    returns the rows if that attempt succeeds.
+
 ## [0.1.6] - 2026-07-25
 
 First release published to PyPI. Versions 0.1.0–0.1.5 exist only as git tags.

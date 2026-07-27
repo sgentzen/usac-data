@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
+import time
 from urllib.parse import unquote
 
 import httpx
@@ -14,6 +18,19 @@ from usac_data.exceptions import USACRetryError
 
 DATASET_ID = "test-1234"
 ENDPOINT = f"{BASE_URL}/{DATASET_ID}.json"
+
+
+@pytest.fixture
+def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Record backoff waits instead of really sleeping, for sync and async paths."""
+    recorded: list[float] = []
+
+    async def fake_asleep(seconds: float) -> None:
+        recorded.append(seconds)
+
+    monkeypatch.setattr(time, "sleep", recorded.append)
+    monkeypatch.setattr(asyncio, "sleep", fake_asleep)
+    return recorded
 
 
 class TestUSACClientSync:
@@ -277,6 +294,145 @@ class TestLazyClientInit:
         assert client._async_client is not None
         await client.aclose()
         assert client._async_client is None
+
+
+class TestRetryContract:
+    """Retry behaviour the transport must honour, whatever drives the loop."""
+
+    def test_retry_error_chains_the_last_exception(
+        self, httpx_mock: HTTPXMock, sleeps: list[float]
+    ) -> None:
+        client = USACClient(max_retries=2)
+        httpx_mock.add_response(status_code=500)
+        httpx_mock.add_response(status_code=503)
+
+        with pytest.raises(USACRetryError) as exc_info:
+            client.get(DATASET_ID)
+
+        cause = exc_info.value.__cause__
+        assert isinstance(cause, httpx.HTTPStatusError)
+        assert cause.response.status_code == 503
+
+    def test_retry_warning_names_the_attempt_and_wait(
+        self, httpx_mock: HTTPXMock, sleeps: list[float], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        client = USACClient(max_retries=3)
+        httpx_mock.add_response(status_code=500)
+        httpx_mock.add_response(json=[{"ok": True}])
+
+        with caplog.at_level(logging.WARNING, logger="usac_data.client"):
+            client.get(DATASET_ID)
+
+        assert len(caplog.records) == 1
+        assert caplog.records[0].getMessage().startswith(
+            f"Retry 1/3 for {DATASET_ID} (wait 1.0s):"
+        )
+
+    def test_429_retry_after_header_drives_the_wait(
+        self, httpx_mock: HTTPXMock, sleeps: list[float], client: USACClient
+    ) -> None:
+        httpx_mock.add_response(status_code=429, headers={"Retry-After": "7"})
+        httpx_mock.add_response(json=[{"ok": True}])
+
+        client.get(DATASET_ID)
+        assert sleeps == [7.0]
+
+    def test_transport_error_waits_with_exponential_backoff(
+        self, httpx_mock: HTTPXMock, sleeps: list[float], client: USACClient
+    ) -> None:
+        httpx_mock.add_exception(httpx.ConnectError("connection refused"))
+        httpx_mock.add_response(json=[{"ok": True}])
+
+        client.get(DATASET_ID)
+        assert sleeps == [1.0]
+
+    def test_non_retryable_status_never_waits(
+        self, httpx_mock: HTTPXMock, sleeps: list[float], client: USACClient
+    ) -> None:
+        httpx_mock.add_response(status_code=400)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            client.get(DATASET_ID)
+        assert sleeps == []
+
+    def test_non_httpx_failure_is_not_retried(
+        self, httpx_mock: HTTPXMock, sleeps: list[float], client: USACClient
+    ) -> None:
+        """A malformed body fails the JSON decode, which is not a retryable condition."""
+        httpx_mock.add_response(text="not json")
+
+        with pytest.raises(json.JSONDecodeError):
+            client.get(DATASET_ID)
+        assert len(httpx_mock.get_requests()) == 1
+        assert sleeps == []
+
+    def test_sync_does_not_wait_after_the_final_attempt(
+        self, httpx_mock: HTTPXMock, sleeps: list[float]
+    ) -> None:
+        client = USACClient(max_retries=3)
+        for _ in range(3):
+            httpx_mock.add_response(status_code=500)
+
+        with pytest.raises(USACRetryError):
+            client.get(DATASET_ID)
+
+        assert len(httpx_mock.get_requests()) == 3
+        assert sleeps == [1.0, 2.0]
+
+    async def test_async_does_not_wait_after_the_final_attempt(
+        self, httpx_mock: HTTPXMock, sleeps: list[float]
+    ) -> None:
+        client = USACClient(max_retries=3)
+        for _ in range(3):
+            httpx_mock.add_response(status_code=500)
+
+        with pytest.raises(USACRetryError):
+            await client.aget(DATASET_ID)
+
+        assert len(httpx_mock.get_requests()) == 3
+        assert sleeps == [1.0, 2.0]
+
+
+class TestAsyncRetryBehaviour:
+    async def test_aget_retries_on_server_error(
+        self, httpx_mock: HTTPXMock, sleeps: list[float], client: USACClient
+    ) -> None:
+        httpx_mock.add_response(status_code=500)
+        httpx_mock.add_response(json=[{"ok": True}])
+
+        rows = await client.aget(DATASET_ID)
+        assert rows == [{"ok": True}]
+        assert sleeps == [1.0]
+
+    async def test_aget_retries_on_transport_error(
+        self, httpx_mock: HTTPXMock, sleeps: list[float], client: USACClient
+    ) -> None:
+        httpx_mock.add_exception(httpx.ConnectError("connection refused"))
+        httpx_mock.add_response(json=[{"ok": True}])
+
+        rows = await client.aget(DATASET_ID)
+        assert rows == [{"ok": True}]
+
+    async def test_aget_does_not_retry_on_client_error(
+        self, httpx_mock: HTTPXMock, sleeps: list[float], client: USACClient
+    ) -> None:
+        httpx_mock.add_response(status_code=403)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.aget(DATASET_ID)
+        assert len(httpx_mock.get_requests()) == 1
+
+    async def test_aget_raises_retry_error_after_exhaustion(
+        self, httpx_mock: HTTPXMock, sleeps: list[float]
+    ) -> None:
+        client = USACClient(max_retries=2)
+        httpx_mock.add_response(status_code=500)
+        httpx_mock.add_response(status_code=500)
+
+        with pytest.raises(USACRetryError) as exc_info:
+            await client.aget(DATASET_ID)
+        assert exc_info.value.dataset_id == DATASET_ID
+        assert exc_info.value.attempts == 2
 
 
 class TestBuildParams:
