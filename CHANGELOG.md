@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-30
+
+One breaking change: the `$select` aggregate allowlist drops to five functions.
+If you use `count_distinct()`, `median()`, `stddev_pop()` or `stddev_samp()` in
+`select()`, move those calls to `select_raw()`. Details below.
+
 ### Changed
 
 - **Breaking:** the `$select` aggregate allowlist narrows from nine functions
