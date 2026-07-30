@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking:** the `$select` aggregate allowlist narrows from nine functions
+  to five. `count`, `sum`, `avg`, `min` and `max` remain; `count_distinct`,
+  `median`, `stddev_pop` and `stddev_samp` are removed.
+
+  0.2.0 replaced the old expression shape check with the nine functions SoQL
+  documents. This narrows that to the five the package and its datasets
+  actually query, on the principle that an allowlist should carry what is used
+  rather than what is available. If you adopted one of the four removed
+  functions in 0.2.0, this is a second break to the same method.
+
+  This closes no vulnerability, which is why it is filed here rather than under
+  Security. The four removed functions were already constrained to a single
+  validated column and an anchored alias, exactly like the five that remain.
+  It continues the direction 0.2.0 set rather than fixing anything left open by
+  it.
+
+  Migration: `select_raw()`, unchanged from 0.2.0 and already the documented
+  route for non-aggregate SoQL, takes these too.
+
+      # before
+      q.select("median(cost)")
+      # after
+      q.select_raw("median(cost)")
+
+  `select_raw()` appends the string unvalidated, so never pass unsanitized
+  user input to it.
+
+  Nothing in this package used the four removed functions. The only aggregate
+  it builds is `count(*) as count`, in `USACClient.count()` and `acount()`.
+
 ## [0.2.0] - 2026-07-26
 
 Two new datasets, and one breaking change: `SoQLBuilder.select()` now validates

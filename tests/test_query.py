@@ -281,9 +281,9 @@ class TestSoQLBuilder:
             "count(*)",
             "count(*) as n",
             "count(ben)",
-            "count_distinct(ben) as distinct_bens",
-            "median(cost)",
-            "stddev_pop(cost) as sd",
+            "sum(total_authorized) as total",
+            "avg(cost)",
+            "min(cost) as cheapest",
             "MAX(Cost) AS Highest",
         ],
     )
@@ -291,24 +291,45 @@ class TestSoQLBuilder:
         params = SoQLBuilder().select(expression).to_params()
         assert params["$select"] == expression
 
+    # SoQL documents these, but they are deliberately off the allowlist. They
+    # are reachable through select_raw(), so this pins the narrower choice
+    # rather than an oversight.
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "count_distinct(ben) as distinct_bens",
+            "median(cost)",
+            "stddev_pop(cost) as sd",
+            "stddev_samp(cost)",
+        ],
+    )
+    def test_select_rejects_aggregates_outside_the_allowlist(
+        self, expression: str,
+    ) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL select"):
+            builder.select(expression)
+
     # Pinned so that widening $select is a deliberate two-file edit rather than
     # a one-line append to the tuple.
     def test_aggregate_allowlist_is_pinned(self) -> None:
-        assert set(_AGGREGATE_FUNCTIONS) == {
-            "count",
-            "count_distinct",
-            "sum",
-            "avg",
-            "min",
-            "max",
-            "median",
-            "stddev_pop",
-            "stddev_samp",
-        }
+        assert set(_AGGREGATE_FUNCTIONS) == {"count", "sum", "avg", "min", "max"}
 
     def test_select_raw_bypasses_validation(self) -> None:
         params = SoQLBuilder().select_raw("date_trunc_ym(funding_date) as month").to_params()
         assert params["$select"] == "date_trunc_ym(funding_date) as month"
+
+    # The documented migration for the aggregates left off the allowlist, so
+    # the rejection tests above describe a narrowing rather than a dead end.
+    @pytest.mark.parametrize(
+        "expression",
+        ["count_distinct(ben)", "median(cost)", "stddev_pop(cost) as sd"],
+    )
+    def test_select_raw_reaches_non_allowlisted_aggregates(
+        self, expression: str,
+    ) -> None:
+        params = SoQLBuilder().select_raw(expression).to_params()
+        assert params["$select"] == expression
 
     def test_select_raw_combines_with_select(self) -> None:
         params = (
