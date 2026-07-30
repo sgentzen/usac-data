@@ -36,16 +36,19 @@ _FIELD_RE = re.compile(r"^[a-zA-Z_]\w*\Z", re.ASCII)  # no IGNORECASE: spell bot
 _ORDER_RE = re.compile(
     r"^(:id|[a-z_]\w*)( +(asc|desc))?\Z", re.IGNORECASE | re.ASCII,
 )
-# The aggregate functions SoQL documents. $select is an allowlist, not a shape
+# The aggregate functions $select accepts. This is an allowlist, not a shape
 # check: a call to anything not named here is rejected rather than forwarded.
 #
-# Ordered longest-first so alternation does not depend on backtracking to reach
-# "count_distinct" after "count" has already matched its prefix.
+# Deliberately narrower than the set SoQL documents: count_distinct, median,
+# stddev_pop and stddev_samp are omitted, because the five here cover what this
+# package and its datasets actually query. select_raw() is the way to reach the
+# rest.
+#
+# No name here is a prefix of another, so alternation order does not matter. If
+# a longer name sharing a prefix is ever added (count_distinct being the obvious
+# candidate), put it ahead of its prefix so the match does not rely on
+# backtracking out of the shorter alternative.
 _AGGREGATE_FUNCTIONS = (
-    "count_distinct",
-    "stddev_samp",
-    "stddev_pop",
-    "median",
     "count",
     "sum",
     "avg",
@@ -146,16 +149,16 @@ class SoQLBuilder:
             select("count(*) as count")
             select("sum(total_authorized) as total", "max(cost) as peak")
 
-        The permitted aggregates are ``count``, ``count_distinct``, ``sum``,
-        ``avg``, ``min``, ``max``, ``median``, ``stddev_pop`` and
-        ``stddev_samp``. ``*`` is accepted only as ``count(*)``. Only the
-        aggregate form takes an alias: a bare column name may not carry one.
+        The permitted aggregates are ``count``, ``sum``, ``avg``, ``min`` and
+        ``max``. ``*`` is accepted only as ``count(*)``. Only the aggregate
+        form takes an alias: a bare column name may not carry one.
 
         Anything else raises ``ValueError``. Pass multiple expressions as
         separate arguments; a single string holding a comma-separated list is
-        not accepted. For SoQL this does not model — non-aggregate functions
-        such as ``date_trunc_y()``, casts or arithmetic — use
-        :meth:`select_raw`.
+        not accepted. Use :meth:`select_raw` for SoQL this does not model: the
+        aggregates left off the allowlist (``count_distinct``, ``median``,
+        ``stddev_pop``, ``stddev_samp``), non-aggregate functions such as
+        ``date_trunc_y()``, casts, and arithmetic.
         """
         for f in fields:
             if not _SELECT_RE.match(f):
