@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-30
+
+Restores `count_distinct()` to `SoQLBuilder.select()`. If you moved a
+`count_distinct()` call to `select_raw()` for 0.3.0, move it back.
+
+### Fixed
+
+- `count_distinct` returns to the `$select` aggregate allowlist, which is now
+  six functions: `count`, `count_distinct`, `sum`, `avg`, `min` and `max`.
+  `median`, `stddev_pop` and `stddev_samp` stay off it and stay reachable
+  through `select_raw()`.
+
+  0.3.0 removed `count_distinct` on the principle that an allowlist should
+  carry what is used rather than what is available. That reasoning did not hold
+  for this function: it was in use. The only consumer in evidence counts
+  distinct FRNs and distinct funding years per recipient BEN with it, and SoQL
+  2.0 has no subqueries, so no combination of the remaining five re-expresses a
+  distinct count.
+
+  Removing it therefore retired no query. It moved a fixed literal expression
+  off a path that validates the column and anchors the alias, onto
+  `select_raw()`, which does neither. By 0.3.0's own account it closed no
+  vulnerability, since the removed functions were already constrained exactly
+  like the five that remained, so the net effect was to weaken the caller for
+  nothing.
+
+  Migration, for anyone who followed 0.3.0's:
+
+      # 0.3.0
+      q.select_raw("count_distinct(frn) as frns")
+      # 0.3.1
+      q.select("count_distinct(frn) as frns")
+
+  `select_raw("count_distinct(...)")` keeps working, so this is additive: no
+  0.3.0 code breaks by staying as it is.
+
+  Note for anyone editing `_AGGREGATE_FUNCTIONS`: `count` is a prefix of
+  `count_distinct`, and the names are joined into a single regex alternation.
+  `count_distinct` is ordered ahead of `count` so the match does not depend on
+  backtracking out of the shorter alternative.
+
 ## [0.3.0] - 2026-07-30
 
 One breaking change: the `$select` aggregate allowlist drops to five functions.

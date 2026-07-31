@@ -285,11 +285,26 @@ class TestSoQLBuilder:
             "avg(cost)",
             "min(cost) as cheapest",
             "MAX(Cost) AS Highest",
+            "count_distinct(ben) as distinct_bens",
+            "count_distinct(funding_request_number) as recipient_frn_count",
+            "COUNT_DISTINCT(Ben) AS N",
         ],
     )
     def test_select_accepts_allowlisted_aggregates(self, expression: str) -> None:
         params = SoQLBuilder().select(expression).to_params()
         assert params["$select"] == expression
+
+    # count_distinct is the one allowlisted name that has another as a prefix,
+    # so both spellings have to keep validating independently of each other.
+    def test_select_accepts_count_and_count_distinct_over_the_same_column(
+        self,
+    ) -> None:
+        params = (
+            SoQLBuilder()
+            .select("count(frn) as frns", "count_distinct(frn) as distinct_frns")
+            .to_params()
+        )
+        assert params["$select"] == "count(frn) as frns,count_distinct(frn) as distinct_frns"
 
     # SoQL documents these, but they are deliberately off the allowlist. They
     # are reachable through select_raw(), so this pins the narrower choice
@@ -297,7 +312,6 @@ class TestSoQLBuilder:
     @pytest.mark.parametrize(
         "expression",
         [
-            "count_distinct(ben) as distinct_bens",
             "median(cost)",
             "stddev_pop(cost) as sd",
             "stddev_samp(cost)",
@@ -310,10 +324,27 @@ class TestSoQLBuilder:
         with pytest.raises(ValueError, match="Invalid SoQL select"):
             builder.select(expression)
 
+    # "count_distinct" is not a licence for any count_* name.
+    def test_select_rejects_other_count_prefixed_functions(self) -> None:
+        builder = SoQLBuilder()
+        with pytest.raises(ValueError, match="Invalid SoQL select"):
+            builder.select("count_evil(ben)")
+
     # Pinned so that widening $select is a deliberate two-file edit rather than
     # a one-line append to the tuple.
     def test_aggregate_allowlist_is_pinned(self) -> None:
-        assert set(_AGGREGATE_FUNCTIONS) == {"count", "sum", "avg", "min", "max"}
+        assert set(_AGGREGATE_FUNCTIONS) == {
+            "count_distinct", "count", "sum", "avg", "min", "max",
+        }
+
+    # Ordering inside the tuple is load-bearing, not cosmetic: the names are
+    # joined into one regex alternation, and "count" is a prefix of
+    # "count_distinct". Python's re does backtrack out of a shorter alternative,
+    # so both orders happen to match today — this pins the order the module
+    # comment prescribes, so the guard never comes to depend on that backtrack.
+    def test_count_distinct_precedes_count_in_the_allowlist(self) -> None:
+        functions = list(_AGGREGATE_FUNCTIONS)
+        assert functions.index("count_distinct") < functions.index("count")
 
     def test_select_raw_bypasses_validation(self) -> None:
         params = SoQLBuilder().select_raw("date_trunc_ym(funding_date) as month").to_params()
@@ -323,7 +354,7 @@ class TestSoQLBuilder:
     # the rejection tests above describe a narrowing rather than a dead end.
     @pytest.mark.parametrize(
         "expression",
-        ["count_distinct(ben)", "median(cost)", "stddev_pop(cost) as sd"],
+        ["median(cost)", "stddev_pop(cost) as sd", "stddev_samp(cost)"],
     )
     def test_select_raw_reaches_non_allowlisted_aggregates(
         self, expression: str,
