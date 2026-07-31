@@ -39,16 +39,26 @@ _ORDER_RE = re.compile(
 # The aggregate functions $select accepts. This is an allowlist, not a shape
 # check: a call to anything not named here is rejected rather than forwarded.
 #
-# Deliberately narrower than the set SoQL documents: count_distinct, median,
-# stddev_pop and stddev_samp are omitted, because the five here cover what this
-# package and its datasets actually query. select_raw() is the way to reach the
-# rest.
+# Narrower than the set SoQL documents: median, stddev_pop and stddev_samp are
+# omitted, because nothing querying these datasets has asked for them.
+# select_raw() is the way to reach those.
 #
-# No name here is a prefix of another, so alternation order does not matter. If
-# a longer name sharing a prefix is ever added (count_distinct being the obvious
-# candidate), put it ahead of its prefix so the match does not rely on
-# backtracking out of the shorter alternative.
+# count_distinct is not in that category. 0.3.0 removed it on the principle
+# that an allowlist should carry what is used rather than what is available —
+# but it was in use, to count distinct FRNs and funding years per BEN, and SoQL
+# 2.0 has no subqueries, so no combination of the other five re-expresses it.
+# Removing it therefore did not retire the query; it moved a fixed literal off
+# a validated path onto select_raw(), which neither validates nor escapes. An
+# entry here is constrained to one validated column and an anchored alias, so
+# it is the stronger of the two places for that expression to live. Hence 0.3.1
+# putting it back.
+#
+# ORDER IS LOAD-BEARING: these names are joined into one regex alternation, and
+# "count" is a prefix of "count_distinct". count_distinct stays ahead of count
+# so the match never relies on backtracking out of the shorter alternative. Any
+# future name sharing a prefix goes ahead of its prefix on the same grounds.
 _AGGREGATE_FUNCTIONS = (
+    "count_distinct",
     "count",
     "sum",
     "avg",
@@ -149,16 +159,17 @@ class SoQLBuilder:
             select("count(*) as count")
             select("sum(total_authorized) as total", "max(cost) as peak")
 
-        The permitted aggregates are ``count``, ``sum``, ``avg``, ``min`` and
-        ``max``. ``*`` is accepted only as ``count(*)``. Only the aggregate
-        form takes an alias: a bare column name may not carry one.
+        The permitted aggregates are ``count``, ``count_distinct``, ``sum``,
+        ``avg``, ``min`` and ``max``. ``*`` is accepted only as ``count(*)``.
+        Only the aggregate form takes an alias: a bare column name may not
+        carry one.
 
         Anything else raises ``ValueError``. Pass multiple expressions as
         separate arguments; a single string holding a comma-separated list is
         not accepted. Use :meth:`select_raw` for SoQL this does not model: the
-        aggregates left off the allowlist (``count_distinct``, ``median``,
-        ``stddev_pop``, ``stddev_samp``), non-aggregate functions such as
-        ``date_trunc_y()``, casts, and arithmetic.
+        aggregates left off the allowlist (``median``, ``stddev_pop``,
+        ``stddev_samp``), non-aggregate functions such as ``date_trunc_y()``,
+        casts, and arithmetic.
         """
         for f in fields:
             if not _SELECT_RE.match(f):
